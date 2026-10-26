@@ -1,0 +1,114 @@
+.root {
+    -fx-font-size: 13px;
+    -fx-base: #f4f5f7;
+    -fx-accent: #2563eb;
+    -fx-focus-color: #2563eb;
+}
+
+.header {
+    -fx-background-color: #1e293b;
+}
+
+.app-title {
+    -fx-text-fill: white;
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
+.header .hint {
+    -fx-text-fill: #cbd5e1;
+}
+
+.hint {
+    -fx-text-fill: #64748b;
+}
+
+.section {
+    -fx-font-weight: bold;
+    -fx-text-fill: #1e293b;
+    -fx-padding: 8 0 0 0;
+}
+
+.button.accent {
+    -fx-base: #2563eb;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+}
+
+.error-label {
+    -fx-text-fill: #b91c1c;
+}
+
+.summary {
+    -fx-padding: 8;
+    -fx-background-radius: 6;
+}
+
+.good {
+    -fx-text-fill: #166534;
+    -fx-background-color: #dcfce7;
+    -fx-background-radius: 6;
+}
+
+.bad {
+    -fx-text-fill: #991b1b;
+    -fx-background-color: #fee2e2;
+    -fx-background-radius: 6;
+}
+
+.log {
+    -fx-font-family: "Consolas", "Menlo", "DejaVu Sans Mono", monospace;
+    -fx-font-size: 12px;
+}
+
+.slot-toggle:selected {
+    -fx-base: #ef4444;
+    -fx-text-fill: white;
+}
+
+/* Timetable grid */
+.tt-head {
+    -fx-font-weight: bold;
+    -fx-text-fill: #334155;
+    -fx-padding: 4;
+}
+
+.tt-cell {
+    -fx-padding: 6;
+    -fx-background-radius: 6;
+    -fx-border-radius: 6;
+    -fx-border-color: rgba(15, 23, 42, 0.12);
+}
+
+.tt-empty {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #e2e8f0;
+    -fx-border-style: dashed;
+}
+
+.tt-clash {
+    -fx-border-color: #dc2626;
+    -fx-border-width: 2;
+}
+
+.tt-code {
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+    -fx-text-fill: #0f172a;
+}
+
+.tt-title {
+    -fx-font-size: 11px;
+    -fx-text-fill: #334155;
+}
+
+.tt-details {
+    -fx-font-size: 11px;
+    -fx-text-fill: #475569;
+}
+
+.tt-shared {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #7c2d12;
+}
