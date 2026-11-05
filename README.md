@@ -1,5 +1,7 @@
 # Automated Academic Timetable Generator
 
+[![ci](https://github.com/pajiala99/academic-timetable-generator/actions/workflows/ci.yml/badge.svg)](https://github.com/pajiala99/academic-timetable-generator/actions/workflows/ci.yml)
+
 A JavaFX desktop application, backed by MySQL through a JDBC DAO layer, that builds
 **clash-free weekly timetables for an entire department**.
 
