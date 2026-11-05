@@ -251,3 +251,7 @@ academic-timetable-generator/
   a harmless warning when JavaFX is on the classpath.
 - **A saved timetable is marked as no longer matching the data**: you edited courses, rooms
   or availability after generating it. Generate a new one.
+
+---
+
+**Hardik Pajiala** · [LinkedIn](https://linkedin.com/in/hardik-pajiala) · [Portfolio](https://pajiala99.github.io) · [GitHub](https://github.com/pajiala99)
