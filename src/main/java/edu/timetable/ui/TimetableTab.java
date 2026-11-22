@@ -41,6 +41,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.RowConstraints;
 import javafx.scene.image.PixelReader;
 import javafx.scene.image.WritableImage;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 import javafx.stage.FileChooser;
@@ -196,6 +197,7 @@ final class TimetableTab extends Tab implements Refreshable {
     /** Lays out a weekly grid: a header row of periods, then one row per day. */
     private void fill(GridPane target, TimetableGrid tg) {
         SchedulingConfig config = tg.config();
+        int lunch = config.lunchAfter();
         target.getColumnConstraints().add(new ColumnConstraints(56));
         target.getRowConstraints().add(new RowConstraints());
         for (int p = 0; p < config.periodsPerDay(); p++) {
@@ -208,7 +210,15 @@ final class TimetableTab extends Tab implements Refreshable {
             head.getStyleClass().add("tt-head");
             head.setMaxWidth(Double.MAX_VALUE);
             GridPane.setHalignment(head, HPos.CENTER);
-            target.add(head, p + 1, 0);
+            target.add(head, column(p, lunch), 0);
+            if (p + 1 == lunch) {
+                // A narrow Lunch column after period `lunch`: no class runs through it.
+                target.getColumnConstraints().add(new ColumnConstraints(44));
+                Label l = new Label("Lunch");
+                l.getStyleClass().add("tt-lunch-head");
+                GridPane.setHalignment(l, HPos.CENTER);
+                target.add(l, lunch + 1, 0);
+            }
         }
         for (int d = 0; d < config.days(); d++) {
             RowConstraints rc = new RowConstraints();
@@ -218,8 +228,21 @@ final class TimetableTab extends Tab implements Refreshable {
             Label day = new Label(SchedulingConfig.dayName(d));
             day.getStyleClass().add("tt-head");
             target.add(day, 0, d + 1);
-            for (int p = 0; p < config.periodsPerDay(); p++) target.add(cell(tg, d, p), p + 1, d + 1);
+            for (int p = 0; p < config.periodsPerDay(); p++) target.add(cell(tg, d, p), column(p, lunch), d + 1);
+            if (lunch > 0) {
+                Label l = new Label("Lunch");
+                l.setRotate(-90);
+                l.getStyleClass().add("tt-lunch");
+                StackPane band = new StackPane(l);
+                band.getStyleClass().add("tt-lunch-band");
+                target.add(band, lunch + 1, d + 1);
+            }
         }
+    }
+
+    /** Grid column of period p: one to the right of the day names, plus one after the lunch column. */
+    private static int column(int p, int lunch) {
+        return p + 1 + (lunch > 0 && p >= lunch ? 1 : 0);
     }
 
     private VBox cell(TimetableGrid tg, int day, int period) {

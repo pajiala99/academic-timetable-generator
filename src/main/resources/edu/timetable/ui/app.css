@@ -129,3 +129,8 @@
     -fx-font-weight: bold;
     -fx-text-fill: #0f172a;
 }
+
+/* Lunch break column in the timetable grid */
+.tt-lunch-head { -fx-font-size: 11px; -fx-text-fill: #64748b; }
+.tt-lunch-band { -fx-background-color: #eef2f6; -fx-background-radius: 8; }
+.tt-lunch { -fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #64748b; }

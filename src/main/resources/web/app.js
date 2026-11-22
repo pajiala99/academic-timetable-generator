@@ -594,27 +594,41 @@ routes.timetable = async (main) => {
 };
 
 function gridNode(data) {
-    const {dayNames, periodsPerDay} = data.week;
-    const grid = h('div', {class: 'tt-grid', style: {gridTemplateColumns: `56px repeat(${periodsPerDay}, minmax(120px, 1fr))`}});
+    const {dayNames, periodsPerDay, lunchAfter} = data.week;
+    // A narrow Lunch column sits after period lunchAfter (0 = no break).
+    const columns = ['56px'];
+    for (let p = 0; p < periodsPerDay; p++) {
+        columns.push('minmax(120px, 1fr)');
+        if (p + 1 === lunchAfter) columns.push('44px');
+    }
+    const grid = h('div', {class: 'tt-grid', style: {gridTemplateColumns: columns.join(' ')}});
     grid.append(h('div'));
-    for (let p = 0; p < periodsPerDay; p++) grid.append(h('div', {class: 'tt-head'}, `P${p + 1}`));
+    for (let p = 0; p < periodsPerDay; p++) {
+        grid.append(h('div', {class: 'tt-head'}, `P${p + 1}`));
+        if (p + 1 === lunchAfter) grid.append(h('div', {class: 'tt-head lunch-head'}, 'Lunch'));
+    }
     data.rows.forEach((row, d) => {
         grid.append(h('div', {class: 'tt-day'}, dayNames[d]));
-        for (const cell of row) {
-            if (!cell.items.length) {
-                grid.append(h('div', {class: 'tt-cell empty'}));
-                continue;
-            }
-            grid.append(h('div', {
-                class: 'tt-cell' + (cell.clash ? ' clash' : ''),
-                style: {background: cell.items[0].colour},
-                title: cell.items.map(i => i.tooltip).join('\n\n'),
-            }, cell.items.map(i => h('div', {class: 'tt-item'},
-                h('strong', {}, i.heading), h('div', {class: 't'}, i.title), h('div', {class: 'd'}, i.details),
-                i.joint ? h('div', {class: 'joint'}, i.joint) : null))));
-        }
+        row.forEach((cell, p) => {
+            gridCell(grid, cell);
+            if (p + 1 === lunchAfter) grid.append(h('div', {class: 'tt-lunch', title: 'Lunch break: no class runs through it'}, 'Lunch'));
+        });
     });
     return grid;
+}
+
+function gridCell(grid, cell) {
+    if (!cell.items.length) {
+        grid.append(h('div', {class: 'tt-cell empty'}));
+        return;
+    }
+    grid.append(h('div', {
+        class: 'tt-cell' + (cell.clash ? ' clash' : ''),
+        style: {background: cell.items[0].colour},
+        title: cell.items.map(i => i.tooltip).join('\n\n'),
+    }, cell.items.map(i => h('div', {class: 'tt-item'},
+        h('strong', {}, i.heading), h('div', {class: 't'}, i.title), h('div', {class: 'd'}, i.details),
+        i.joint ? h('div', {class: 'joint'}, i.joint) : null))));
 }
 
 /** Prints every timetable in the current view, one page each. */
