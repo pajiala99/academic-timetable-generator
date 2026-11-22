@@ -1,5 +1,7 @@
 package edu.timetable.solver;
 
+import edu.timetable.model.Faculty;
+
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Random;
@@ -8,24 +10,30 @@ import java.util.function.BooleanSupplier;
 /**
  * Complete backtracking search for a timetable that satisfies every hard constraint.
  *
- * <p>The search colours meetings with slots. Rooms are not branched on: for every slot the
- * solver maintains a bipartite matching between the meetings placed in that slot and the rooms
- * that suit them, so a set of meetings can share a slot exactly when the matching covers them
- * all. This removes the huge, mostly symmetric branching over room choices.
+ * <p>The search assigns each meeting a start slot (its colour). Rooms are handled per slot:
+ * <ul>
+ *   <li>single-period meetings are not branched on rooms; every slot keeps a bipartite matching
+ *       between its meetings and suitable rooms, so a set of meetings can share a slot exactly
+ *       when the matching covers them all;</li>
+ *   <li>a multi-period meeting (a double-period lab) must keep one room for all its periods, so
+ *       the search branches on that room and pins it; matchings may move single-period
+ *       meetings around a pinned room, never the pinned meeting itself.</li>
+ * </ul>
  *
  * <ul>
- *   <li><b>Variable ordering:</b> minimum remaining values (fewest slots left in the domain).
- *       Ties go to the meeting with the highest saturation degree (distinct slots already used by
- *       its assigned neighbours, as in DSatur), then to the one with most unassigned neighbours,
- *       then to the one with fewest suitable rooms, then randomly.</li>
- *   <li><b>Value ordering:</b> least-constraining slot first: the slot that the fewest unassigned
- *       neighbours could still use, then the one with the most free rooms.</li>
- *   <li><b>Forward checking:</b> placing a meeting in slot s removes s from the domain of every
- *       conflicting meeting, and from every other meeting that the room matching of s can no
- *       longer absorb. A domain wipe-out triggers an immediate backtrack.</li>
+ *   <li><b>Variable ordering:</b> minimum remaining values (fewest start slots left). Ties go
+ *       to the highest saturation degree (distinct slots already occupied by its assigned
+ *       neighbours, as in DSatur), then to the most unassigned neighbours, then to the fewest
+ *       suitable rooms, then randomly.</li>
+ *   <li><b>Value ordering:</b> least-constraining start first (the one that the fewest
+ *       unassigned neighbours could still use), then the one with the most free rooms.</li>
+ *   <li><b>Forward checking:</b> placing a meeting removes, from every other meeting, the
+ *       starts that would overlap it while sharing a student group or teacher, the starts whose
+ *       rooms can no longer be found, and the starts that would push the teacher past their
+ *       daily limit. A domain wipe-out triggers an immediate backtrack.</li>
  *   <li><b>Restarts:</b> runs are cut off after a node budget that grows geometrically, with
- *       fresh random tie-breaking each time, which tames heavy-tailed run times. A run that
- *       exhausts its search tree within budget proves the instance infeasible.</li>
+ *       fresh random tie-breaking each time. A run that exhausts its search tree within budget
+ *       proves the instance infeasible.</li>
  * </ul>
  */
 public final class BacktrackingSolver {
@@ -55,20 +63,24 @@ public final class BacktrackingSolver {
     private final int meetingCount;
     private final int slotCount;
     private final int roomCount;
-    private final int[][] suitableRooms;
+    private final int periods;
+    private final int[] duration;
+    private final int[] faculty;
+    private final int[] dailyLimit;
 
     // Search state.
     private BitSet[] domain;
-    private int[] slotOf;
+    private int[] startOf;
     private int[] roomOf;
     private int[][] holder;          // holder[slot][room] = meeting using that room, or -1
     private int[] freeRooms;         // per slot
+    private int[][] facultyLoad;     // [faculty][day] periods taught
     private int[][] neighbourSlotUse;
     private int[] saturation;
     private int[] freeDegree;
     private int unassigned;
 
-    // Trail of removed (meeting, slot) domain values, undone on backtrack.
+    // Trail of removed (meeting, start) domain values, undone on backtrack.
     private int[] trailMeeting = new int[1024];
     private int[] trailSlot = new int[1024];
     private int trailSize;
@@ -91,8 +103,18 @@ public final class BacktrackingSolver {
         this.meetingCount = problem.meetingCount();
         this.slotCount = problem.slotCount();
         this.roomCount = problem.roomCount();
-        this.suitableRooms = new int[meetingCount][];
-        for (int m = 0; m < meetingCount; m++) suitableRooms[m] = problem.suitableRooms(m);
+        this.periods = problem.config().periodsPerDay();
+        this.duration = new int[meetingCount];
+        this.faculty = new int[meetingCount];
+        for (int m = 0; m < meetingCount; m++) {
+            duration[m] = problem.durationOf(m);
+            faculty[m] = problem.facultyOf(m);
+        }
+        this.dailyLimit = new int[problem.faculty().length];
+        for (int f = 0; f < dailyLimit.length; f++) {
+            Faculty fac = problem.faculty()[f];
+            dailyLimit[f] = fac.hasDailyLimit() ? fac.maxPerDay() : Integer.MAX_VALUE;
+        }
         this.visitStamp = new int[roomCount];
     }
 
@@ -111,7 +133,7 @@ public final class BacktrackingSolver {
             long millis = System.currentTimeMillis() - start;
             if (outcome == SOLVED) {
                 Schedule s = new Schedule(meetingCount);
-                for (int m = 0; m < meetingCount; m++) s.assign(m, slotOf[m], roomOf[m]);
+                for (int m = 0; m < meetingCount; m++) s.assign(m, startOf[m], roomOf[m]);
                 return new Result(Status.SOLVED, s, nodes, backtracks, restartCount, millis);
             }
             if (outcome == EXHAUSTED) {
@@ -129,16 +151,18 @@ public final class BacktrackingSolver {
         domain = new BitSet[meetingCount];
         for (int m = 0; m < meetingCount; m++) {
             domain[m] = new BitSet(slotCount);
-            for (int s : p.allowedSlots(m)) if (suitableRooms[m].length > 0) domain[m].set(s);
+            if (p.suitableRooms(m).length == 0) continue;
+            for (int s : p.allowedStarts(m)) if (duration[m] <= dailyLimit[faculty[m]]) domain[m].set(s);
         }
-        slotOf = new int[meetingCount];
+        startOf = new int[meetingCount];
         roomOf = new int[meetingCount];
-        Arrays.fill(slotOf, -1);
+        Arrays.fill(startOf, -1);
         Arrays.fill(roomOf, -1);
         holder = new int[slotCount][roomCount];
         for (int[] row : holder) Arrays.fill(row, -1);
         freeRooms = new int[slotCount];
         Arrays.fill(freeRooms, roomCount);
+        facultyLoad = new int[p.faculty().length][p.config().days()];
         neighbourSlotUse = new int[meetingCount][slotCount];
         saturation = new int[meetingCount];
         freeDegree = new int[meetingCount];
@@ -162,17 +186,23 @@ public final class BacktrackingSolver {
         }
 
         int m = selectMeeting();
-        for (int s : orderSlots(m)) {
-            int mark = trailSize;
-            if (place(m, s)) {
-                if (forwardCheck(m, s)) {
-                    int outcome = search();
-                    if (outcome != EXHAUSTED) return outcome;
+        boolean pinned = duration[m] > 1;
+        for (int s : orderStarts(m)) {
+            // Single-period meetings get their room from the slot's matching; longer ones try each room.
+            int[] roomChoices = pinned ? p.suitableRooms(m) : new int[]{-1};
+            for (int r : roomChoices) {
+                if (pinned && !claimable(m, s, r)) continue;
+                int mark = trailSize;
+                if (place(m, s, r)) {
+                    if (forwardCheck(m, s)) {
+                        int outcome = search();
+                        if (outcome != EXHAUSTED) return outcome;
+                    }
+                    undo(mark);
+                    unplace(m);
                 }
-                undo(mark);
-                unplace(m);
+                backtracks++;
             }
-            backtracks++;
         }
         return EXHAUSTED;
     }
@@ -181,7 +211,7 @@ public final class BacktrackingSolver {
         int best = -1;
         int ties = 0;
         for (int m = 0; m < meetingCount; m++) {
-            if (slotOf[m] >= 0) continue;
+            if (startOf[m] >= 0) continue;
             int cmp = best < 0 ? 1 : compareUrgency(m, best);
             if (cmp == 0) {
                 ties++;
@@ -199,75 +229,119 @@ public final class BacktrackingSolver {
         int cmp = Integer.compare(domain[b].cardinality(), domain[a].cardinality());
         if (cmp == 0) cmp = Integer.compare(saturation[a], saturation[b]);
         if (cmp == 0) cmp = Integer.compare(freeDegree[a], freeDegree[b]);
-        if (cmp == 0) cmp = Integer.compare(suitableRooms[b].length, suitableRooms[a].length);
+        if (cmp == 0) cmp = Integer.compare(p.suitableRooms(b).length, p.suitableRooms(a).length);
         return cmp;
     }
 
-    private int[] orderSlots(int m) {
-        int[] slots = domain[m].stream().toArray();
-        long[] keys = new long[slots.length];
-        for (int i = 0; i < slots.length; i++) {
-            int s = slots[i];
+    private int[] orderStarts(int m) {
+        int[] starts = domain[m].stream().toArray();
+        long[] keys = new long[starts.length];
+        for (int i = 0; i < starts.length; i++) {
+            int s = starts[i];
             int impact = 0;
-            for (int n : p.neighbours(m)) if (slotOf[n] < 0 && domain[n].get(s)) impact++;
+            for (int n : p.neighbours(m)) if (startOf[n] < 0 && anyOverlappingStart(n, m, s)) impact++;
+            int busyRooms = 0;
+            for (int t = s; t < s + duration[m]; t++) busyRooms += roomCount - freeRooms[t];
             // Lower key first: fewer neighbours affected, then more free rooms, then random.
-            keys[i] = ((long) impact << 40) | ((long) (roomCount - freeRooms[s]) << 20) | random.nextInt(1 << 20);
+            keys[i] = ((long) impact << 40) | ((long) Math.min(busyRooms, 0xFFFFF) << 20) | random.nextInt(1 << 20);
         }
-        Integer[] idx = new Integer[slots.length];
+        Integer[] idx = new Integer[starts.length];
         for (int i = 0; i < idx.length; i++) idx[i] = i;
         Arrays.sort(idx, (x, y) -> Long.compare(keys[x], keys[y]));
-        int[] out = new int[slots.length];
-        for (int i = 0; i < out.length; i++) out[i] = slots[idx[i]];
+        int[] out = new int[starts.length];
+        for (int i = 0; i < out.length; i++) out[i] = starts[idx[i]];
         return out;
+    }
+
+    /** Does meeting n still have a start that overlaps meeting m placed at s? */
+    private boolean anyOverlappingStart(int n, int m, int s) {
+        int first = domain[n].nextSetBit(Math.max(0, s - duration[n] + 1));
+        return first >= 0 && first < s + duration[m];
     }
 
     // ---- placing meetings and the per-slot room matching ------------------------------------
 
-    /** Puts m into slot s, re-matching the slot's rooms if necessary. False if no room can be found. */
-    private boolean place(int m, int s) {
-        stamp++;
-        if (!augment(m, s, true)) return false;
-        slotOf[m] = s;
-        freeRooms[s]--;
-        unassigned--;
-        for (int n : p.neighbours(m)) {
-            freeDegree[n]--;
-            if (neighbourSlotUse[n][s]++ == 0) saturation[n]++;
+    /** Puts m into its periods from s; r is the room for a multi-period meeting, -1 to match one. */
+    private boolean place(int m, int s, int r) {
+        if (r < 0) {
+            stamp++;
+            if (!augment(m, s, true)) return false;
+        } else {
+            for (int t = s; t < s + duration[m]; t++) {
+                int occupant = holder[t][r];
+                if (occupant >= 0) {
+                    // Re-seat the single-period occupant elsewhere in this slot; claimable() said it can be.
+                    stamp++;
+                    visitStamp[r] = stamp;
+                    holder[t][r] = -1;
+                    if (!augment(occupant, t, true)) throw new IllegalStateException("room claim failed after check");
+                }
+                holder[t][r] = m;
+            }
+            roomOf[m] = r;
         }
+        startOf[m] = s;
+        unassigned--;
+        facultyLoad[faculty[m]][s / periods] += duration[m];
+        for (int t = s; t < s + duration[m]; t++) {
+            freeRooms[t]--;
+            for (int n : p.neighbours(m)) if (neighbourSlotUse[n][t]++ == 0) saturation[n]++;
+        }
+        for (int n : p.neighbours(m)) freeDegree[n]--;
         return true;
     }
 
     private void unplace(int m) {
-        int s = slotOf[m];
-        for (int n : p.neighbours(m)) {
-            freeDegree[n]++;
-            if (--neighbourSlotUse[n][s] == 0) saturation[n]--;
+        int s = startOf[m];
+        for (int t = s; t < s + duration[m]; t++) {
+            freeRooms[t]++;
+            for (int n : p.neighbours(m)) if (--neighbourSlotUse[n][t] == 0) saturation[n]--;
+            holder[t][roomOf[m]] = -1;
         }
-        holder[s][roomOf[m]] = -1;
+        for (int n : p.neighbours(m)) freeDegree[n]++;
+        facultyLoad[faculty[m]][s / periods] -= duration[m];
         roomOf[m] = -1;
-        slotOf[m] = -1;
-        freeRooms[s]++;
+        startOf[m] = -1;
         unassigned++;
     }
 
-    /** Could meeting n join slot s without un-seating anybody for good? Does not modify the matching. */
+    /** Could a multi-period meeting take room r for all its periods from s? Changes nothing. */
+    private boolean claimable(int m, int s, int r) {
+        for (int t = s; t < s + duration[m]; t++) {
+            int occupant = holder[t][r];
+            if (occupant < 0) continue;
+            if (duration[occupant] > 1) return false;
+            stamp++;
+            visitStamp[r] = stamp;
+            if (!augment(occupant, t, false)) return false;
+        }
+        return true;
+    }
+
+    /** Could meeting n start at s, as far as rooms go? Changes nothing. */
     private boolean fits(int n, int s) {
-        if (freeRooms[s] == 0) return false;
-        for (int r : suitableRooms[n]) if (holder[s][r] < 0) return true;
-        stamp++;
-        return augment(n, s, false);
+        if (duration[n] == 1) {
+            if (freeRooms[s] == 0) return false;
+            for (int r : p.suitableRooms(n)) if (holder[s][r] < 0) return true;
+            stamp++;
+            return augment(n, s, false);
+        }
+        for (int t = s; t < s + duration[n]; t++) if (freeRooms[t] == 0) return false;
+        for (int r : p.suitableRooms(n)) if (claimable(n, s, r)) return true;
+        return false;
     }
 
     /**
-     * Augmenting-path search in slot s: find a room for meeting m, moving already-seated meetings
-     * of the slot to other suitable rooms if needed. With {@code commit} the matching is updated.
+     * Augmenting-path search in slot s: find a room for single-period meeting m, moving other
+     * single-period meetings of the slot to other suitable rooms if needed. Pinned (multi-period)
+     * meetings never move. With {@code commit} the matching is updated.
      */
     private boolean augment(int m, int s, boolean commit) {
-        for (int r : suitableRooms[m]) {
+        for (int r : p.suitableRooms(m)) {
             if (visitStamp[r] == stamp) continue;
             visitStamp[r] = stamp;
             int occupant = holder[s][r];
-            if (occupant < 0 || augment(occupant, s, commit)) {
+            if (occupant < 0 || (duration[occupant] == 1 && augment(occupant, s, commit))) {
                 if (commit) {
                     holder[s][r] = m;
                     roomOf[m] = r;
@@ -280,21 +354,31 @@ public final class BacktrackingSolver {
 
     // ---- forward checking ---------------------------------------------------------------------
 
-    /** Prunes the other domains after placing m in slot s; returns false on a wipe-out. */
+    /** Prunes the other domains after placing m at s; returns false on a wipe-out. */
     private boolean forwardCheck(int m, int s) {
         BitSet conflicting = p.neighbourSet(m);
+        int day = s / periods;
+        int f = faculty[m];
         for (int n = 0; n < meetingCount; n++) {
-            if (slotOf[n] >= 0 || !domain[n].get(s)) continue;
-            if (conflicting.get(n) || !fits(n, s)) {
-                domain[n].clear(s);
-                record(n, s);
-                if (domain[n].isEmpty()) return false;
+            if (startOf[n] >= 0) continue;
+            BitSet d = domain[n];
+            boolean conflict = conflicting.get(n);
+            // Starts of n whose periods overlap [s, s + duration m).
+            int from = Math.max(0, s - duration[n] + 1), to = s + duration[m];
+            for (int t = d.nextSetBit(from); t >= 0 && t < to; t = d.nextSetBit(t + 1)) {
+                if (conflict || !fits(n, t)) remove(n, t);
             }
+            // The teacher's daily limit, on the rest of the day.
+            if (faculty[n] == f && dailyLimit[f] != Integer.MAX_VALUE && facultyLoad[f][day] + duration[n] > dailyLimit[f]) {
+                for (int t = d.nextSetBit(day * periods); t >= 0 && t < (day + 1) * periods; t = d.nextSetBit(t + 1)) remove(n, t);
+            }
+            if (d.isEmpty()) return false;
         }
         return true;
     }
 
-    private void record(int meeting, int slot) {
+    private void remove(int meeting, int slot) {
+        domain[meeting].clear(slot);
         if (trailSize == trailMeeting.length) {
             trailMeeting = Arrays.copyOf(trailMeeting, trailSize * 2);
             trailSlot = Arrays.copyOf(trailSlot, trailSize * 2);

@@ -14,22 +14,24 @@ public final class JdbcBatchDao extends JdbcSupport implements BatchDao {
 
     @Override
     public List<Batch> findAll() {
-        return query("SELECT id, name, student_count FROM batch ORDER BY name", JdbcBatchDao::map);
+        return query("SELECT id, name, student_count, parent_id FROM batch ORDER BY name", JdbcBatchDao::map);
     }
 
     @Override
     public Optional<Batch> findById(int id) {
-        return queryOne("SELECT id, name, student_count FROM batch WHERE id = ?", JdbcBatchDao::map, id);
+        return queryOne("SELECT id, name, student_count, parent_id FROM batch WHERE id = ?", JdbcBatchDao::map, id);
     }
 
     @Override
     public Batch insert(Batch b) {
-        return b.withId(insert("INSERT INTO batch (name, student_count) VALUES (?, ?)", b.name(), b.studentCount()));
+        return b.withId(insert("INSERT INTO batch (name, student_count, parent_id) VALUES (?, ?, ?)",
+                b.name(), b.studentCount(), b.parentId()));
     }
 
     @Override
     public void update(Batch b) {
-        update("UPDATE batch SET name = ?, student_count = ? WHERE id = ?", b.name(), b.studentCount(), b.id());
+        update("UPDATE batch SET name = ?, student_count = ?, parent_id = ? WHERE id = ?",
+                b.name(), b.studentCount(), b.parentId(), b.id());
     }
 
     @Override
@@ -38,6 +40,8 @@ public final class JdbcBatchDao extends JdbcSupport implements BatchDao {
     }
 
     private static Batch map(ResultSet rs) throws SQLException {
-        return new Batch(rs.getInt("id"), rs.getString("name"), rs.getInt("student_count"));
+        int parent = rs.getInt("parent_id");
+        Integer parentId = rs.wasNull() ? null : parent; // wasNull() refers to the column read just before
+        return new Batch(rs.getInt("id"), rs.getString("name"), rs.getInt("student_count"), parentId);
     }
 }

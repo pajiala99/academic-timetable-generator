@@ -9,7 +9,7 @@ agreed in week 1 and changed only by agreement.
 |---|---|---|---|
 | **A: Persistence** | MySQL schema, JDBC DAO layer, configuration, data import | `dao/*`, `src/main/resources/sql/schema.sql`, `db.properties.example`, `DataStore.importDataset` | `DataStoreTest` (H2 and MySQL runs) |
 | **B: Solver engine** | conflict graph, pre-checks, backtracking, soft objective, annealing, sample and synthetic data, CLI | `solver/*`, `service/SampleData`, `service/Cli` | `BacktrackingSolverTest`, `FeasibilityCheckerTest`, `CliqueFinderTest`, `SoftConstraintEvaluatorTest`, `SimulatedAnnealerTest`, `TimetableEngineTest` |
-| **C: Interface** | JavaFX application, forms and validation, generation progress, timetable views, CSV export | `ui/*`, `app.css`, `service/TimetableGrid`, `service/CsvExporter`, `service/TimetableService` | `CsvExporterTest`, GUI smoke runs |
+| **C: Interface** | JavaFX application and the browser version: forms and validation, generation progress, timetable views, PDF and CSV export | `ui/*`, `web/*`, `resources/web/*`, `app.css`, `service/TimetableGrid`, `service/CsvExporter`, `service/PdfExporter`, `service/TimetableService` | `CsvExporterTest`, `PdfExporterTest`, `WebServerTest`, GUI and browser runs |
 
 ### Contracts between members
 
@@ -38,7 +38,7 @@ mock them:
 | **6** | **vertical slice** | **vertical slice** | **vertical slice** | **demo: enter data → MySQL → generate a clash-free timetable → view it → saved run reloads** |
 | 7 | embedded H2 fallback | soft objective (idle gaps, load spread) + simulated annealing | cost chart, cancel button | |
 | 8 | CSV export support queries | session spacing, building changes, weight tuning | weights in UI, CSV export | |
-| 9 | `course_batch` join table | combined classes in model, solver and annealer | multi-batch course editor, "joint with" cells | combined classes end to end |
+| 9 | `course_batch` join table, lab-group / daily-limit / session-length columns, in-place upgrade | combined classes, lab groups, double periods and daily limits in solver, checks and annealer | multi-batch course editor, lab-group and limit fields, Save as PDF | real-department constraints end to end |
 | 10 | MySQL integration test runs | brute-force property tests, benchmarks (`--synthetic`) | GUI smoke tests, usability fixes | feature freeze |
 | 11 | packaging (fat jar), install guide | performance tuning, DESIGN.md | user guide, screenshots | release candidate |
 | 12 | final report and presentation (all) | | | submission |
@@ -69,10 +69,17 @@ mock them:
 | batch idle gaps, faculty load spread, session spacing, building changes | `SoftConstraintEvaluator.idleGaps / loadSpread / sessionSpacing / buildingChanges` |
 | every move rejected unless it preserves hard feasibility | `SimulatedAnnealer.free / teachable` checked before `apply`; final audit by `HardConstraintValidator` |
 | honest handling of infeasibility | separate outcomes: INFEASIBLE_PRECHECK (with reasons), INFEASIBLE_SEARCH, TIMEOUT ("undecided"), CANCELLED |
+| *(added)* double-period labs | `Course.periodsPerMeeting`; allowed starts in `Problem`; pinned rooms in `BacktrackingSolver`; long-session check in `FeasibilityChecker` |
+| *(added)* lab groups | `Batch.parentId`; student groups in `Problem`; "Lab group of" in the batch editor |
+| *(added)* teachers' daily limits | `Faculty.maxPerDay`; forward checking in `BacktrackingSolver`; capacity check in `FeasibilityChecker`; annealer filter |
+| *(added)* printable timetables | "Save as PDF" (`service/PdfExporter`) and printing in `ui/TimetableTab` |
+| *(added)* web version | `web/WebServer`, `web/Api` (JSON over the same `TimetableService`), single-page app in `resources/web` |
 
-Additions beyond the proposal: Hall's-condition checks with explanations, exact per-slot room
-matching inside the search, randomised restarts, combined classes, re-validation of saved
-timetables, CSV export, the embedded database fallback and the headless CLI.
+Additions beyond the proposal: double-period labs, lab groups, teachers' daily limits, combined
+classes, Hall's-condition and long-session checks with explanations, exact per-slot room
+matching inside the search, randomised restarts, re-validation of saved timetables, Save as
+PDF and CSV export, the embedded database fallback with in-place upgrades, a browser version
+of the whole app, and the headless CLI.
 
 ## Risks and mitigations
 

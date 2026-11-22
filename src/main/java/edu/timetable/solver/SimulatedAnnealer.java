@@ -1,5 +1,7 @@
 package edu.timetable.solver;
 
+import edu.timetable.model.Faculty;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -9,13 +11,14 @@ import java.util.function.BooleanSupplier;
 /**
  * Improves a feasible timetable against the soft-constraint objective by simulated annealing.
  *
- * <p>Two move types are used: <i>relocate</i> (move one meeting to another allowed slot and
- * room) and <i>swap</i> (exchange the slots and rooms of two meetings, usually of the same
- * batch). Before a move is applied it is checked against occupancy tables for batches, faculty
- * and rooms, and against the meetings' base domains; any move that would break a hard
- * constraint is rejected outright, so the schedule stays feasible at every step. Feasible moves
- * are accepted by the Metropolis rule under a geometric cooling schedule, and the best schedule
- * ever seen is returned.
+ * <p>Two move types are used: <i>relocate</i> (move one meeting to another allowed start and a
+ * free suitable room) and <i>swap</i> (exchange the starts and rooms of two meetings of the
+ * same length, usually sharing a student group). Every move is checked against occupancy
+ * tables for student groups, teachers and rooms over all periods of the meetings involved,
+ * against the meetings' allowed starts and rooms, and against teachers' daily limits. A move
+ * that would break any hard constraint is rejected outright, so the schedule stays feasible at
+ * every step. Feasible moves are accepted by the Metropolis rule under a geometric cooling
+ * schedule, and the best schedule ever seen is returned.
  */
 public final class SimulatedAnnealer {
 
@@ -48,9 +51,14 @@ public final class SimulatedAnnealer {
     private final Problem p;
     private final SoftConstraintEvaluator evaluator;
     private final Options options;
-    private final int[][] batchAt;
+    private final int periods;
+    private final boolean[][] allowedStart;
+    private final boolean[][] suitableRoom;
+    private final int[] dailyLimit;
+    private final int[][] groupAt;
     private final int[][] facultyAt;
     private final int[][] roomAt;
+    private final int[][] facultyLoad;
     private Schedule current;
     private Random random;
 
@@ -59,9 +67,23 @@ public final class SimulatedAnnealer {
         this.evaluator = evaluator;
         this.options = options;
         int slots = problem.slotCount();
-        this.batchAt = new int[problem.batches().length][slots];
+        this.periods = problem.config().periodsPerDay();
+        int m = problem.meetingCount();
+        this.allowedStart = new boolean[m][slots];
+        this.suitableRoom = new boolean[m][problem.roomCount()];
+        for (int i = 0; i < m; i++) {
+            for (int s : problem.allowedStarts(i)) allowedStart[i][s] = true;
+            for (int r : problem.suitableRooms(i)) suitableRoom[i][r] = true;
+        }
+        this.dailyLimit = new int[problem.faculty().length];
+        for (int f = 0; f < dailyLimit.length; f++) {
+            Faculty fac = problem.faculty()[f];
+            dailyLimit[f] = fac.hasDailyLimit() ? fac.maxPerDay() : Integer.MAX_VALUE;
+        }
+        this.groupAt = new int[problem.groups().length][slots];
         this.facultyAt = new int[problem.faculty().length][slots];
         this.roomAt = new int[problem.roomCount()][slots];
+        this.facultyLoad = new int[problem.faculty().length][problem.config().days()];
     }
 
     public Result improve(Schedule start, Listener listener, BooleanSupplier cancelled) {
@@ -147,55 +169,71 @@ public final class SimulatedAnnealer {
         static final Move NONE = new Move(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
     }
 
-    /** Moves one meeting to a random allowed slot, into a free suitable room there. */
+    /** Moves one meeting to a random allowed start, into a free suitable room there. */
     private Move proposeRelocation() {
         int m = random.nextInt(p.meetingCount());
-        int[] slots = p.allowedSlots(m);
-        int s = slots[random.nextInt(slots.length)];
-        if (!teachable(m, s, m, -1)) return null;
+        int[] starts = p.allowedStarts(m);
+        int s = starts[random.nextInt(starts.length)];
         int oldS = current.slotOf(m), oldR = current.roomOf(m);
         int[] rooms = p.suitableRooms(m);
         int offset = random.nextInt(rooms.length);
-        for (int k = 0; k < rooms.length; k++) {
-            int r = rooms[(offset + k) % rooms.length];
-            if (s == oldS && r == oldR) continue;
-            if (vacant(roomAt[r][s], m, -1)) return new Move(m, s, r, oldS, oldR, -1, -1, -1, -1, -1);
+        lift(m);
+        try {
+            if (!teachable(m, s)) return null;
+            for (int k = 0; k < rooms.length; k++) {
+                int r = rooms[(offset + k) % rooms.length];
+                if (s == oldS && r == oldR) continue;
+                if (roomFree(m, s, r)) return new Move(m, s, r, oldS, oldR, -1, -1, -1, -1, -1);
+            }
+            return s == oldS ? Move.NONE : null;
+        } finally {
+            put(m, oldS, oldR);
         }
-        return s == oldS ? Move.NONE : null;
     }
 
     private Move proposeSwap() {
         int a = random.nextInt(p.meetingCount());
         int b;
         if (random.nextDouble() < 0.7) {
-            int[] attending = p.batchesOf(a);
-            int[] sameBatch = p.meetingsOfBatch(attending[random.nextInt(attending.length)]);
-            b = sameBatch[random.nextInt(sameBatch.length)];
+            int[] attending = p.groupsOf(a);
+            int[] sameGroup = p.meetingsOfGroup(attending[random.nextInt(attending.length)]);
+            b = sameGroup[random.nextInt(sameGroup.length)];
         } else {
             b = random.nextInt(p.meetingCount());
         }
         // Meetings of one course are interchangeable, so swapping two of them changes nothing.
         if (a == b || p.courseOf(a) == p.courseOf(b)) return Move.NONE;
+        if (p.durationOf(a) != p.durationOf(b)) return null;
         int sa = current.slotOf(a), ra = current.roomOf(a);
         int sb = current.slotOf(b), rb = current.roomOf(b);
-        if (!p.baseDomain(a).get(p.pair(sb, rb)) || !p.baseDomain(b).get(p.pair(sa, ra))) return null;
-        if (!free(a, sb, rb, a, b) || !free(b, sa, ra, a, b)) return null;
-        return new Move(a, sb, rb, sa, ra, b, sa, ra, sb, rb);
+        if (!allowedStart[a][sb] || !allowedStart[b][sa] || !suitableRoom[a][rb] || !suitableRoom[b][ra]) return null;
+        lift(a);
+        lift(b);
+        boolean ok = false;
+        if (teachable(a, sb) && roomFree(a, sb, rb)) {
+            put(a, sb, rb);
+            ok = teachable(b, sa) && roomFree(b, sa, ra);
+            lift(a);
+        }
+        put(a, sa, ra);
+        put(b, sb, rb);
+        return ok ? new Move(a, sb, rb, sa, ra, b, sa, ra, sb, rb) : null;
     }
 
-    /** Would meeting m fit at (s, r) once meetings x and y are lifted out of the timetable? */
-    private boolean free(int m, int s, int r, int x, int y) {
-        return teachable(m, s, x, y) && vacant(roomAt[r][s], x, y);
+    /** With m lifted out: are m's student groups and teacher free for all its periods from s, within the daily limit? */
+    private boolean teachable(int m, int s) {
+        int f = p.facultyOf(m);
+        if (facultyLoad[f][s / periods] + p.durationOf(m) > dailyLimit[f]) return false;
+        for (int t = s; t < s + p.durationOf(m); t++) {
+            if (facultyAt[f][t] >= 0) return false;
+            for (int g : p.groupsOf(m)) if (groupAt[g][t] >= 0) return false;
+        }
+        return true;
     }
 
-    /** Are m's batches and teacher free in slot s, ignoring meetings x and y? */
-    private boolean teachable(int m, int s, int x, int y) {
-        for (int b : p.batchesOf(m)) if (!vacant(batchAt[b][s], x, y)) return false;
-        return vacant(facultyAt[p.facultyOf(m)][s], x, y);
-    }
-
-    private static boolean vacant(int occupant, int x, int y) {
-        return occupant < 0 || occupant == x || occupant == y;
+    private boolean roomFree(int m, int s, int r) {
+        for (int t = s; t < s + p.durationOf(m); t++) if (roomAt[r][t] >= 0) return false;
+        return true;
     }
 
     private double apply(Move mv) {
@@ -217,24 +255,31 @@ public final class SimulatedAnnealer {
     // ---- occupancy ------------------------------------------------------------------------
 
     private void buildOccupancy() {
-        for (int[] row : batchAt) Arrays.fill(row, -1);
+        for (int[] row : groupAt) Arrays.fill(row, -1);
         for (int[] row : facultyAt) Arrays.fill(row, -1);
         for (int[] row : roomAt) Arrays.fill(row, -1);
+        for (int[] row : facultyLoad) Arrays.fill(row, 0);
         for (int m = 0; m < p.meetingCount(); m++) put(m, current.slotOf(m), current.roomOf(m));
     }
 
     private void lift(int m) {
-        int s = current.slotOf(m), r = current.roomOf(m);
-        for (int b : p.batchesOf(m)) batchAt[b][s] = -1;
-        facultyAt[p.facultyOf(m)][s] = -1;
-        roomAt[r][s] = -1;
+        mark(m, current.slotOf(m), current.roomOf(m), -1);
+        facultyLoad[p.facultyOf(m)][current.slotOf(m) / periods] -= p.durationOf(m);
         current.assign(m, -1, -1);
     }
 
     private void put(int m, int s, int r) {
-        for (int b : p.batchesOf(m)) batchAt[b][s] = m;
-        facultyAt[p.facultyOf(m)][s] = m;
-        roomAt[r][s] = m;
+        mark(m, s, r, m);
+        facultyLoad[p.facultyOf(m)][s / periods] += p.durationOf(m);
         current.assign(m, s, r);
+    }
+
+    private void mark(int m, int s, int r, int value) {
+        int f = p.facultyOf(m);
+        for (int t = s; t < s + p.durationOf(m); t++) {
+            for (int g : p.groupsOf(m)) groupAt[g][t] = value;
+            facultyAt[f][t] = value;
+            roomAt[r][t] = value;
+        }
     }
 }

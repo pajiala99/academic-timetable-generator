@@ -41,7 +41,7 @@ final class Dialogs {
     static Alert alert(Alert.AlertType type, Window owner, String header, String message) {
         Alert a = new Alert(type, message);
         if (owner != null) a.initOwner(owner);
-        a.setTitle("Timetable Generator");
+        a.setTitle("SlotWise");
         a.setHeaderText(header);
         a.getDialogPane().setMinHeight(Region.USE_PREF_SIZE);
         a.getDialogPane().setPrefWidth(560);

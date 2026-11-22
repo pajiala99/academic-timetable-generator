@@ -66,13 +66,15 @@ public class TimetableApp extends Application {
                 new CoursesTab(service), generate, timetable);
         tabs.getSelectionModel().selectedItemProperty().addListener((o, a, tab) -> refresh(tab));
 
-        Label title = new Label("Academic Timetable Generator");
+        Label title = new Label("SlotWise");
         title.getStyleClass().add("app-title");
         Label db = new Label(store.database().describe());
         db.getStyleClass().add("hint");
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox header = new HBox(12, title, spacer, db);
+        Label tagline = new Label("Clash-free timetables, proven.");
+        tagline.getStyleClass().add("tagline");
+        HBox header = new HBox(12, title, tagline, spacer, db);
         header.setAlignment(Pos.CENTER_LEFT);
         header.setPadding(new Insets(10, 14, 10, 14));
         header.getStyleClass().add("header");
@@ -83,7 +85,7 @@ public class TimetableApp extends Application {
 
         Scene scene = new Scene(root, 1320, 820);
         scene.getStylesheets().add(TimetableApp.class.getResource("app.css").toExternalForm());
-        stage.setTitle("Academic Timetable Generator");
+        stage.setTitle("SlotWise - Academic Timetable Generator");
         stage.setScene(scene);
         stage.setMinWidth(900);
         stage.setMinHeight(600);
