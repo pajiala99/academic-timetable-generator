@@ -225,6 +225,8 @@ Options: `--synthetic BATCHES`, `--load MEETINGS_PER_BATCH`, `--room-use FRACTIO
                  Independent validator --> saved to MySQL --> grid views, CSV
 ```
 
+[docs/HANDOFF.md](docs/HANDOFF.md) is the quickest overview: project status, how to run it,
+a 5-minute presentation script, and how to continue in a Claude desktop chat.
 [docs/DESIGN.md](docs/DESIGN.md) explains the model, the algorithms and their correctness
 arguments, the verification strategy, measured results and limitations.
 [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) maps the work onto three team members
