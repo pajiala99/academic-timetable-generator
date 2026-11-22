@@ -74,6 +74,7 @@ public final class CsvExporter {
                     row[p + 1] = grid.at(d, p).stream()
                             .map(c -> c.course().code() + " (" + c.details(grid.perspective()) + ")")
                             .collect(Collectors.joining(" / "));
+                    if (row[p + 1].isEmpty()) row[p + 1] = "Free";
                 }
                 line(w, row);
             }

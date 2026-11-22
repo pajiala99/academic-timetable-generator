@@ -619,7 +619,7 @@ function gridNode(data) {
 
 function gridCell(grid, cell) {
     if (!cell.items.length) {
-        grid.append(h('div', {class: 'tt-cell empty'}));
+        grid.append(h('div', {class: 'tt-cell empty', title: 'Free slot: nothing is scheduled here'}, 'Free'));
         return;
     }
     grid.append(h('div', {
