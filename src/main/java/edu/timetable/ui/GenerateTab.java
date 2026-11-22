@@ -43,6 +43,7 @@ final class GenerateTab extends Tab implements Refreshable {
 
     private final Spinner<Integer> days = new Spinner<>(1, 7, 5);
     private final Spinner<Integer> periods = new Spinner<>(1, 12, 7);
+    private final Spinner<Integer> lunch = new Spinner<>(0, 11, 0);
     private final TextField timeLimit = Forms.field("30");
     private final TextField cliqueLimit = Forms.field("2");
     private final TextField iterations = Forms.field("1000000");
@@ -51,6 +52,7 @@ final class GenerateTab extends Tab implements Refreshable {
     private final TextField wLoad = Forms.field("1");
     private final TextField wSpacing = Forms.field("4");
     private final TextField wBuilding = Forms.field("2");
+    private final TextField wRoomFit = Forms.field("1");
     private final TextField label = Forms.field("");
 
     private final Button generate = new Button("Generate timetable");
@@ -74,6 +76,7 @@ final class GenerateTab extends Tab implements Refreshable {
         form.add(heading("Week"), 0, r++, 2, 1);
         Forms.row(form, r++, "Days per week", days);
         Forms.row(form, r++, "Periods per day", periods);
+        Forms.row(form, r++, "Lunch after period (0 = none)", lunch);
         form.add(heading("Search (hard constraints)"), 0, r++, 2, 1);
         Forms.row(form, r++, "Time limit (s)", timeLimit);
         Forms.row(form, r++, "Clique bound (s)", cliqueLimit);
@@ -85,6 +88,7 @@ final class GenerateTab extends Tab implements Refreshable {
         Forms.row(form, r++, "Faculty load spread", wLoad);
         Forms.row(form, r++, "Session spacing", wSpacing);
         Forms.row(form, r++, "Building change", wBuilding);
+        Forms.row(form, r++, "Room fit", wRoomFit);
         form.add(heading("Save as"), 0, r++, 2, 1);
         Forms.row(form, r++, "Label", label);
         label.setPromptText("defaults to date and time");
@@ -149,6 +153,7 @@ final class GenerateTab extends Tab implements Refreshable {
         SchedulingConfig config = service.store().settings().loadConfig();
         days.getValueFactory().setValue(config.days());
         periods.getValueFactory().setValue(config.periodsPerDay());
+        lunch.getValueFactory().setValue(config.lunchAfter());
     }
 
     private Window owner() {
@@ -161,22 +166,27 @@ final class GenerateTab extends Tab implements Refreshable {
         Long iters = Forms.parseLong(iterations.getText(), 0);
         Long seedValue = Forms.parseLong(seed.getText(), Long.MIN_VALUE);
         Double a = Forms.parseDouble(wIdle.getText(), 0), b = Forms.parseDouble(wLoad.getText(), 0),
-                c = Forms.parseDouble(wSpacing.getText(), 0), d = Forms.parseDouble(wBuilding.getText(), 0);
+                c = Forms.parseDouble(wSpacing.getText(), 0), d = Forms.parseDouble(wBuilding.getText(), 0),
+                fit = Forms.parseDouble(wRoomFit.getText(), 0);
         if (time == null || clique == null || iters == null || seedValue == null) {
             Dialogs.error(owner(), "Check the parameters", "Time limits, iterations and seed must be whole numbers (time limit at least 1).");
             return;
         }
-        if (a == null || b == null || c == null || d == null) {
+        if (a == null || b == null || c == null || d == null || fit == null) {
             Dialogs.error(owner(), "Check the weights", "Weights must be numbers of at least 0.");
             return;
         }
-        SchedulingConfig config = new SchedulingConfig(days.getValue(), periods.getValue());
+        if (lunch.getValue() >= periods.getValue()) {
+            Dialogs.error(owner(), "Check the lunch break", "Lunch must come after a period before the last one, or be 0 for no break.");
+            return;
+        }
+        SchedulingConfig config = new SchedulingConfig(days.getValue(), periods.getValue(), lunch.getValue());
         service.store().settings().saveConfig(config);
 
         TimetableEngine.Options options = new TimetableEngine.Options(clique * 1000,
                 new BacktrackingSolver.Options(time * 1000, 1_000, 1.3, seedValue),
                 new SimulatedAnnealer.Options(iters, 0, 0, 0.5, seedValue),
-                new SoftConstraintEvaluator.Weights(a, b, c, d));
+                new SoftConstraintEvaluator.Weights(a, b, c, d, fit));
         String runLabel = label.getText().isBlank()
                 ? "Run " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
                 : label.getText().trim();

@@ -34,7 +34,8 @@ import java.util.stream.IntStream;
  *   <li>Hall's condition on slots for every student group, every teacher and the maximum clique.</li>
  *   <li>Hall's condition on rooms: every piece needs its own (slot, room) pair.</li>
  *   <li>Long sessions: a room can host at most {@code periods / 2} sessions of two or more
- *       periods on one day (3 in a 7-period day), so long sessions need their own room-day
+ *       periods on one day (3 in a 7-period day; with a lunch break, each half counts
+ *       separately), so long sessions need their own room-day
  *       places too. This catches rooms that have enough free periods in total but cannot fit
  *       one more double period anywhere.</li>
  *   <li>Daily limits: a teacher's weekly periods must fit under their per-day limit.</li>
@@ -183,7 +184,7 @@ public final class FeasibilityChecker {
      * sessions into such places must exist.
      */
     private static void hallOnLongSessions(Problem p, List<String> reasons) {
-        int periods = p.config().periodsPerDay(), days = p.config().days(), perDay = periods / 2;
+        int periods = p.config().periodsPerDay(), days = p.config().days(), perDay = p.config().longSessionsPerDay();
         int[] longOnes = IntStream.range(0, p.meetingCount()).filter(m -> p.durationOf(m) > 1 && p.hasOptions(m)).toArray();
         if (longOnes.length == 0 || perDay == 0) return;
         int[][] adj = new int[longOnes.length][];

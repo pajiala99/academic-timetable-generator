@@ -30,7 +30,7 @@ public final class SampleData {
      * sections together in the seminar hall.
      */
     public static Dataset department() {
-        SchedulingConfig config = new SchedulingConfig(5, 7);
+        SchedulingConfig config = new SchedulingConfig(5, 7, 4); // lunch after period 4
         List<Room> rooms = List.of(
                 new Room(1, "LH-101", "Main Block", 70, LECTURE),
                 new Room(2, "LH-102", "Main Block", 70, LECTURE),

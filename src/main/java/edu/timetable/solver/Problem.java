@@ -24,7 +24,8 @@ import java.util.stream.IntStream;
  *
  * <ul>
  *   <li>Every course is expanded into {@code meetingsPerWeek} meetings (vertices). A meeting
- *       lasts {@code periodsPerMeeting} consecutive periods on one day, in one room.</li>
+ *       lasts {@code periodsPerMeeting} consecutive periods on one day, in one room, and never
+ *       runs through the lunch break.</li>
  *   <li><b>Student groups</b> are the units that cannot be in two places at once: every batch
  *       that is not split, and every lab group of a split batch. A class for a split batch is
  *       attended by all of its groups; a class for one group by that group alone.</li>
@@ -145,6 +146,7 @@ public final class Problem {
             int d = durationOf[i];
             allowedStarts[i] = IntStream.range(0, slots)
                     .filter(s -> s % periods + d <= periods)
+                    .filter(s -> !config.crossesLunch(s % periods, d))
                     .filter(s -> IntStream.range(s, s + d).noneMatch(t ->
                             mt.faculty().unavailable().contains(TimeSlot.fromIndex(t, periods))))
                     .toArray();
