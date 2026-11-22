@@ -225,12 +225,8 @@ Options: `--synthetic BATCHES`, `--load MEETINGS_PER_BATCH`, `--room-use FRACTIO
                  Independent validator --> saved to MySQL --> grid views, CSV
 ```
 
-[docs/HANDOFF.md](docs/HANDOFF.md) is the quickest overview: project status, how to run it,
-a 5-minute presentation script, and how to continue in a Claude desktop chat.
 [docs/DESIGN.md](docs/DESIGN.md) explains the model, the algorithms and their correctness
 arguments, the verification strategy, measured results and limitations.
-[docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) maps the work onto three team members
-(persistence, solver engine, interface) and a week-by-week plan with a vertical slice by week 6.
 
 ### Measured results
 
@@ -288,7 +284,7 @@ academic-timetable-generator/
 ├── pom.xml, mvnw, mvnw.cmd          build (Java 17+, JavaFX 21, MySQL Connector/J 8.4, H2, Jackson,
 │                                    PDFBox, JUnit 5)
 ├── db.properties.example            database settings template
-├── docs/                            DESIGN.md, PROJECT_PLAN.md, screenshots
+├── docs/                            DESIGN.md, screenshots
 └── src/
     ├── main/java/edu/timetable/
     │   ├── model/     shared records: Room, Batch, Faculty, Course, TimeSlot, Dataset, ...
