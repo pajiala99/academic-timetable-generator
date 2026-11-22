@@ -4,3 +4,4 @@ db.properties
 .idea/
 .vscode/
 dependency-reduced-pom.xml
+.DS_Store
