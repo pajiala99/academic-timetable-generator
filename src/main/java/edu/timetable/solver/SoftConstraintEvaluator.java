@@ -18,22 +18,29 @@ import java.util.Arrays;
  *       or on consecutive days (0.25 each).</li>
  *   <li><b>Building changes</b>: consecutive classes of a student group on the same day held in
  *       different buildings.</li>
+ *   <li><b>Room fit</b>: periods a class spends in a room with more than twice the seats it
+ *       needs, so big halls stay free and small classes are not lost in them.</li>
  * </ul>
  */
 public final class SoftConstraintEvaluator {
 
-    public record Weights(double idleGap, double loadSpread, double sessionSpacing, double buildingChange) {
+    public record Weights(double idleGap, double loadSpread, double sessionSpacing, double buildingChange, double roomFit) {
+        /** The four original terms, with room fit switched off. */
+        public Weights(double idleGap, double loadSpread, double sessionSpacing, double buildingChange) {
+            this(idleGap, loadSpread, sessionSpacing, buildingChange, 0);
+        }
+
         public static Weights defaults() {
-            return new Weights(3.0, 1.0, 4.0, 2.0);
+            return new Weights(3.0, 1.0, 4.0, 2.0, 1.0);
         }
     }
 
     /** Raw (unweighted) totals of each term, plus the weighted total. */
     public record Breakdown(double idleGaps, double loadSpread, double sessionSpacing,
-                            double buildingChanges, double total) {
+                            double buildingChanges, double oversizedRooms, double total) {
         public String describe() {
-            return String.format("total %.2f  |  idle gaps %.0f, load spread %.0f, session spacing %.2f, building changes %.0f",
-                    total, idleGaps, loadSpread, sessionSpacing, buildingChanges);
+            return String.format("total %.2f  |  idle gaps %.0f, load spread %.0f, session spacing %.2f, building changes %.0f, oversized rooms %.0f",
+                    total, idleGaps, loadSpread, sessionSpacing, buildingChanges, oversizedRooms);
         }
     }
 
@@ -60,16 +67,17 @@ public final class SoftConstraintEvaluator {
     }
 
     public Breakdown breakdown(Schedule s) {
-        double idle = 0, load = 0, spacing = 0, building = 0;
+        double idle = 0, load = 0, spacing = 0, building = 0, oversized = 0;
         for (int g = 0; g < p.groups().length; g++) {
             idle += idleGaps(s, g);
             building += buildingChanges(s, g);
         }
         for (int f = 0; f < p.faculty().length; f++) load += loadSpread(s, f);
         for (int c = 0; c < p.courses().length; c++) spacing += sessionSpacing(s, c);
+        for (int m = 0; m < p.meetingCount(); m++) oversized += oversizedRoom(s, m);
         double total = w.idleGap() * idle + w.loadSpread() * load
-                + w.sessionSpacing() * spacing + w.buildingChange() * building;
-        return new Breakdown(idle, load, spacing, building, total);
+                + w.sessionSpacing() * spacing + w.buildingChange() * building + w.roomFit() * oversized;
+        return new Breakdown(idle, load, spacing, building, oversized, total);
     }
 
     /** Weighted cost of every entity touched by meetings {@code a} and {@code b} ({@code b} may be -1). */
@@ -77,8 +85,9 @@ public final class SoftConstraintEvaluator {
         double cost = 0;
         int[] groupsA = p.groupsOf(a);
         for (int x : groupsA) cost += groupCost(s, x);
-        cost += facultyCost(s, p.facultyOf(a)) + courseCost(s, p.courseOf(a));
+        cost += facultyCost(s, p.facultyOf(a)) + courseCost(s, p.courseOf(a)) + w.roomFit() * oversizedRoom(s, a);
         if (b >= 0) {
+            cost += w.roomFit() * oversizedRoom(s, b);
             for (int x : p.groupsOf(b)) if (!contains(groupsA, x)) cost += groupCost(s, x);
             if (p.facultyOf(b) != p.facultyOf(a)) cost += facultyCost(s, p.facultyOf(b));
             if (p.courseOf(b) != p.courseOf(a)) cost += courseCost(s, p.courseOf(b));
@@ -101,6 +110,13 @@ public final class SoftConstraintEvaluator {
 
     private double courseCost(Schedule s, int c) {
         return w.sessionSpacing() * sessionSpacing(s, c);
+    }
+
+    /** Periods meeting m spends in a room with more than twice the seats its students need. */
+    int oversizedRoom(Schedule s, int m) {
+        int r = s.roomOf(m);
+        if (r < 0) return 0;
+        return p.room(r).capacity() > 2 * p.meeting(m).studentCount() ? p.durationOf(m) : 0;
     }
 
     int idleGaps(Schedule s, int group) {

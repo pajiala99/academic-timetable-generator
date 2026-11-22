@@ -147,7 +147,7 @@ routes.dashboard = async (main) => {
                     h('li', {}, 'Before searching, SlotWise looks for proofs that no timetable exists (maximum clique, ' +
                         "Hall's theorem on slots, rooms and long sessions, daily limits) and explains them."),
                     h('li', {}, 'A backtracking search (fewest options first, forward checking, exact room matching) finds a clash-free timetable.'),
-                    h('li', {}, 'Simulated annealing removes idle gaps, evens out teachers\' days, spreads sessions and cuts building changes, ' +
+                    h('li', {}, 'Simulated annealing removes idle gaps, evens out teachers\' days, spreads sessions, cuts building changes and keeps small classes out of big halls, ' +
                         'never breaking a hard constraint.')))));
 };
 
@@ -429,10 +429,12 @@ routes.generate = async (main) => {
     const input = (value, attrs = {}) => h('input', {type: 'number', value, ...attrs});
     const f = {
         days: input(s.week.days, {min: 1, max: 7}), periodsPerDay: input(s.week.periodsPerDay, {min: 1, max: 12}),
+        lunchAfter: input(s.week.lunchAfter, {min: 0, max: 11}),
         timeLimitSeconds: input(30, {min: 1}), cliqueSeconds: input(2, {min: 0}),
         iterations: input(1000000, {min: 0, step: 100000}), seed: input(42),
         idleGap: input(3, {min: 0, step: 0.5}), loadSpread: input(1, {min: 0, step: 0.5}),
         sessionSpacing: input(4, {min: 0, step: 0.5}), buildingChange: input(2, {min: 0, step: 0.5}),
+        roomFit: input(1, {min: 0, step: 0.5}),
     };
     const label = h('input', {placeholder: 'defaults to date and time'});
     const go = h('button', {class: 'btn primary', type: 'submit'}, 'Generate timetable');
@@ -457,10 +459,11 @@ routes.generate = async (main) => {
         }
     }},
         h('h3', {}, 'Week'), field('Days per week', f.days), field('Periods per day', f.periodsPerDay),
+        field('Lunch after period (0 = none)', f.lunchAfter),
         h('h3', {}, 'Search (hard constraints)'), field('Time limit (s)', f.timeLimitSeconds), field('Clique bound (s)', f.cliqueSeconds),
         h('h3', {}, 'Annealing (soft constraints)'), field('Iterations', f.iterations), field('Random seed', f.seed),
         h('h3', {}, 'Soft-constraint weights'), field('Batch idle gap', f.idleGap), field('Faculty load spread', f.loadSpread),
-        field('Session spacing', f.sessionSpacing), field('Building change', f.buildingChange),
+        field('Session spacing', f.sessionSpacing), field('Building change', f.buildingChange), field('Room fit', f.roomFit),
         h('h3', {}, 'Save as'), h('div', {class: 'field', style: {gridTemplateColumns: '1fr'}}, label),
         h('div', {style: {display: 'flex', gap: '8px', marginTop: '8px'}}, go, cancel));
 

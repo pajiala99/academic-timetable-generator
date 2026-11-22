@@ -198,4 +198,39 @@ class FeasibilityCheckerTest {
             }
         }
     }
+
+    /**
+     * Two double-period labs share one lab on a 4-period day. With lunch after P2 both fit
+     * (P1-P2 and P3-P4); with lunch after P1 only the afternoon can hold one, and the
+     * long-session check proves it.
+     */
+    @Test
+    void lunchBreakLimitsLongSessions() {
+        List<Batch> batches = List.of(new Batch(1, "B1", 30), new Batch(2, "B2", 30));
+        List<Faculty> faculty = List.of(new Faculty(1, "F1"), new Faculty(2, "F2"));
+        List<Course> courses = List.of(new Course(1, "L1", "Lab", 1, List.of(1), 1, 2, RoomType.LAB),
+                new Course(2, "L2", "Lab", 2, List.of(2), 1, 2, RoomType.LAB));
+        List<Room> lab = List.of(new Room(1, "LAB", "X", 60, RoomType.LAB));
+
+        Problem fits = new Problem(new Dataset(new SchedulingConfig(1, 4, 2), lab, faculty, batches, courses));
+        assertFalse(FeasibilityChecker.check(fits, 1_000).provenInfeasible());
+        assertTrue(TinyInstances.bruteForceFeasible(fits));
+
+        Problem tight = new Problem(new Dataset(new SchedulingConfig(1, 4, 1), lab, faculty, batches, courses));
+        FeasibilityReport r = FeasibilityChecker.check(tight, 1_000);
+        assertTrue(mentions(r, "Not enough room for long sessions"), r.reasons().toString());
+        assertFalse(TinyInstances.bruteForceFeasible(tight));
+    }
+
+    /** A double period may not start just before lunch, and the validator flags one that does. */
+    @Test
+    void noSessionRunsThroughLunch() {
+        Problem p = new Problem(new Dataset(new SchedulingConfig(1, 4, 2), List.of(new Room(1, "LAB", "X", 60, RoomType.LAB)),
+                List.of(new Faculty(1, "F1")), List.of(new Batch(1, "B1", 30)),
+                List.of(new Course(1, "L1", "Lab", 1, List.of(1), 1, 2, RoomType.LAB))));
+        assertEquals(List.of(0, 2), java.util.Arrays.stream(p.allowedStarts(0)).boxed().toList(), "P1-P2 or P3-P4, never P2-P3");
+        Schedule s = new Schedule(1);
+        s.assign(0, 1, 0); // P2-P3, through lunch
+        assertTrue(HardConstraintValidator.violations(p, s).stream().anyMatch(v -> v.contains("runs through the lunch break")));
+    }
 }

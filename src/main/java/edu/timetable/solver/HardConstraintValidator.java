@@ -43,6 +43,9 @@ public final class HardConstraintValidator {
             String when = config.slotLabel(start);
             if (start % periods + length > periods)
                 out.add(m.label() + " runs past the end of the day from " + when);
+            int lunch = config.lunchAfter(), first = start % periods;
+            if (lunch > 0 && first < lunch && first + length > lunch)
+                out.add(m.label() + " runs through the lunch break from " + when);
             if (room.type() != m.course().roomType())
                 out.add(m.label() + " needs a " + m.course().roomType() + " room but is in " + room.code());
             if (room.capacity() < m.studentCount())

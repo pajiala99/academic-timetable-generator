@@ -80,4 +80,20 @@ class SoftConstraintEvaluatorTest {
             assertEquals(totalAfter - totalBefore, localAfter - localBefore, 1e-9, "move " + i);
         }
     }
+
+    /** 25 students: a 30-seat room fits, a 120-seat hall is more than twice too big. */
+    @Test
+    void roomFitCountsPeriodsInOversizedRooms() {
+        Dataset d = new Dataset(new SchedulingConfig(1, 4),
+                List.of(new Room(1, "SMALL", "A", 30, RoomType.LECTURE), new Room(2, "HALL", "A", 120, RoomType.LECTURE)),
+                List.of(new Faculty(1, "F1")), List.of(new Batch(1, "B1", 25)),
+                List.of(new Course(1, "C1", "One", 1, List.of(1), 2, 2, RoomType.LECTURE)));
+        Problem p = new Problem(d);
+        Schedule s = new Schedule(p.meetingCount());
+        s.assign(0, 0, 0); // P1-P2 in SMALL (rooms are sorted by size)
+        s.assign(1, 2, 1); // P3-P4 in HALL
+        SoftConstraintEvaluator.Breakdown b = new SoftConstraintEvaluator(p, new SoftConstraintEvaluator.Weights(0, 0, 0, 0, 1)).breakdown(s);
+        assertEquals(2, b.oversizedRooms(), "one double period in the hall");
+        assertEquals(2, b.total(), 1e-9);
+    }
 }

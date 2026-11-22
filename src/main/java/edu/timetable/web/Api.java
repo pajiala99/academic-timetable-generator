@@ -111,19 +111,24 @@ final class Api {
         return out;
     }
 
-    record Week(int days, int periodsPerDay) {
+    /** {@code lunchAfter} may be left out: the current break is kept if it still fits. */
+    record Week(int days, int periodsPerDay, Integer lunchAfter) {
     }
 
     private static Map<String, Object> week(SchedulingConfig c) {
         List<String> names = new ArrayList<>();
         for (int d = 0; d < c.days(); d++) names.add(SchedulingConfig.dayName(d));
-        return Map.of("days", c.days(), "periodsPerDay", c.periodsPerDay(), "dayNames", names);
+        return Map.of("days", c.days(), "periodsPerDay", c.periodsPerDay(), "lunchAfter", c.lunchAfter(), "dayNames", names);
     }
 
     private Map<String, Object> saveWeek(Week w) {
         if (w.days() < 1 || w.days() > 7) throw new Http.ApiError(400, "Days per week must be from 1 to 7.");
         if (w.periodsPerDay() < 1 || w.periodsPerDay() > 12) throw new Http.ApiError(400, "Periods per day must be from 1 to 12.");
-        store.settings().saveConfig(new SchedulingConfig(w.days(), w.periodsPerDay()));
+        int current = store.settings().loadConfig().lunchAfter();
+        int lunch = w.lunchAfter() != null ? w.lunchAfter() : current < w.periodsPerDay() ? current : 0;
+        if (lunch < 0 || lunch >= w.periodsPerDay())
+            throw new Http.ApiError(400, "Lunch must come after a period before the last one, or be 0 for no break.");
+        store.settings().saveConfig(new SchedulingConfig(w.days(), w.periodsPerDay(), lunch));
         return week(store.settings().loadConfig());
     }
 
@@ -221,28 +226,29 @@ final class Api {
     // ---- generation ---------------------------------------------------------------------------
 
     /** Every field is optional; missing ones take the defaults the desktop app shows. */
-    record GenerateRequest(Integer days, Integer periodsPerDay, Long timeLimitSeconds, Long cliqueSeconds, Long iterations,
-                           Long seed, Double idleGap, Double loadSpread, Double sessionSpacing, Double buildingChange,
-                           String label) {
+    record GenerateRequest(Integer days, Integer periodsPerDay, Integer lunchAfter, Long timeLimitSeconds, Long cliqueSeconds,
+                           Long iterations, Long seed, Double idleGap, Double loadSpread, Double sessionSpacing,
+                           Double buildingChange, Double roomFit, String label) {
     }
 
     private Map<String, Object> generate(GenerateRequest g) {
-        if (g.days() != null || g.periodsPerDay() != null) {
+        if (g.days() != null || g.periodsPerDay() != null || g.lunchAfter() != null) {
             SchedulingConfig current = store.settings().loadConfig();
             saveWeek(new Week(g.days() == null ? current.days() : g.days(),
-                    g.periodsPerDay() == null ? current.periodsPerDay() : g.periodsPerDay()));
+                    g.periodsPerDay() == null ? current.periodsPerDay() : g.periodsPerDay(), g.lunchAfter()));
         }
         long time = or(g.timeLimitSeconds(), 30L), clique = or(g.cliqueSeconds(), 2L), iterations = or(g.iterations(), 1_000_000L);
         long seed = or(g.seed(), 42L);
         if (time < 1 || time > 3600) throw new Http.ApiError(400, "The search time limit must be from 1 to 3600 seconds.");
         if (clique < 0 || clique > 600) throw new Http.ApiError(400, "The clique time limit must be from 0 to 600 seconds.");
         if (iterations < 0 || iterations > 100_000_000) throw new Http.ApiError(400, "Iterations must be from 0 to 100,000,000.");
-        double[] w = {or(g.idleGap(), 3.0), or(g.loadSpread(), 1.0), or(g.sessionSpacing(), 4.0), or(g.buildingChange(), 2.0)};
+        double[] w = {or(g.idleGap(), 3.0), or(g.loadSpread(), 1.0), or(g.sessionSpacing(), 4.0), or(g.buildingChange(), 2.0),
+                or(g.roomFit(), 1.0)};
         for (double x : w) if (x < 0 || Double.isNaN(x)) throw new Http.ApiError(400, "Weights must be numbers of at least 0.");
         TimetableEngine.Options options = new TimetableEngine.Options(clique * 1000,
                 new BacktrackingSolver.Options(time * 1000, 1_000, 1.3, seed),
                 new SimulatedAnnealer.Options(iterations, 0, 0, 0.5, seed),
-                new SoftConstraintEvaluator.Weights(w[0], w[1], w[2], w[3]));
+                new SoftConstraintEvaluator.Weights(w[0], w[1], w[2], w[3], w[4]));
         String label = g.label() == null || g.label().isBlank()
                 ? "Run " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) : g.label().trim();
         if (!job.start(service, options, label)) throw new Http.ApiError(409, "A timetable is already being generated.");

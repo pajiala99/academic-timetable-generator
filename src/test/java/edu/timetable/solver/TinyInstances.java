@@ -19,8 +19,8 @@ import java.util.Set;
 
 /**
  * Random instances small enough to decide by exhaustive enumeration, and that enumeration.
- * The instances mix single- and double-period meetings, combined classes, lab groups and
- * teachers' daily limits. The enumerator works from the dataset alone, sharing no code with
+ * The instances mix single- and double-period meetings, combined classes, lab groups,
+ * teachers' daily limits and lunch breaks. The enumerator works from the dataset alone, sharing no code with
  * the solver.
  */
 final class TinyInstances {
@@ -29,7 +29,10 @@ final class TinyInstances {
 
     static Dataset random(long seed) {
         Random rnd = new Random(seed);
-        SchedulingConfig config = rnd.nextBoolean() ? new SchedulingConfig(1, 4 + rnd.nextInt(2)) : new SchedulingConfig(2, 3);
+        SchedulingConfig shape = rnd.nextBoolean() ? new SchedulingConfig(1, 4 + rnd.nextInt(2)) : new SchedulingConfig(2, 3);
+        // A third of the instances get a lunch break after a random period.
+        int lunch = rnd.nextInt(3) == 0 ? 1 + rnd.nextInt(shape.periodsPerDay() - 1) : 0;
+        SchedulingConfig config = new SchedulingConfig(shape.days(), shape.periodsPerDay(), lunch);
         List<Room> rooms = new ArrayList<>();
         int roomCount = 2 + rnd.nextInt(2);
         for (int r = 0; r < roomCount; r++) {
@@ -107,6 +110,8 @@ final class TinyInstances {
         int periods = p.config().periodsPerDay(), length = it.course().periodsPerMeeting();
         for (int start = 0; start < p.slotCount(); start++) {
             if (start % periods + length > periods) continue;
+            int lunch = p.dataset().config().lunchAfter(), first = start % periods;
+            if (lunch > 0 && first < lunch && first + length > lunch) continue; // runs through lunch
             String dayKey = it.teacher().id() + "@" + start / periods;
             int already = load.getOrDefault(dayKey, 0);
             if (it.teacher().hasDailyLimit() && already + length > it.teacher().maxPerDay()) continue;

@@ -32,16 +32,19 @@ spacing and building changes. It rejects every move that would break a hard cons
     even at the same time in different labs, but attend lectures together;
   - **combined classes**: one course attended by several batches (a common lecture or shared
     elective);
-  - **daily limits**: a maximum number of teaching periods per day for each teacher.
+  - **daily limits**: a maximum number of teaching periods per day for each teacher;
+  - **lunch break**: set the period lunch follows, and no session runs through it (a double
+    period cannot start just before lunch).
 - **Honest infeasibility handling**: when no timetable can exist, the generator says so
   *before searching* and explains why, for example "Batch CSE-3A has 36 teaching periods that
   must all be in different slots, but the week has only 35 slots". It reports exhausted searches and
   timeouts as different outcomes.
 - **Hard constraints**: no batch, lab group, faculty member or room is double-booked; rooms
-  have the right type (lecture/lab) and enough seats; sessions stay within one day; faculty
-  unavailability and daily limits are respected.
+  have the right type (lecture/lab) and enough seats; sessions stay within one day and never run
+  through the lunch break; faculty unavailability and daily limits are respected.
 - **Soft constraints**: few idle gaps, even daily load for teachers, sessions of a course
-  spread across the week, and few building changes between consecutive classes. Each has an
+  spread across the week, few building changes between consecutive classes, and small classes
+  kept out of big halls (room fit). Each has an
   adjustable weight.
 - **Live progress**: a log of every phase and a chart of the annealing cost curve. Runs
   happen on a background thread and can be cancelled.
@@ -53,7 +56,7 @@ spacing and building changes. It rejects every move that would break a hard cons
 - **Embedded fallback database** (H2 in MySQL mode), so the app runs before MySQL is set up.
 - **Web version**: the same app in your browser, with a dashboard, live generation progress and
   printable timetables. It runs on your own computer only.
-- **Headless CLI** for demos and benchmarks, and **50 automated tests**, including
+- **Headless CLI** for demos and benchmarks, and **53 automated tests**, including
   property tests that check the solver against brute-force enumeration on 3,000 random
   instances.
 
@@ -252,11 +255,11 @@ solved; 7 needed restarts, the hardest 6,975 nodes and 0.27 s.
 ./mvnw test
 ```
 
-There are 50 tests. Highlights:
+There are 53 tests. Highlights:
 
 - the solver agrees with **exhaustive brute force** on 3,000 random small instances with
-  double periods, lab groups, combined classes and daily limits (464 feasible, 2,536
-  infeasible, 9 of which only the search can prove). Every brute-force solution also passes
+  double periods, lab groups, combined classes, daily limits and lunch breaks (472 feasible,
+  2,528 infeasible, 5 of which only the search can prove). Every brute-force solution also passes
   the independent validator;
 - the pre-checks **never claim infeasibility for a feasible instance**;
 - the clique finder matches exhaustive search;

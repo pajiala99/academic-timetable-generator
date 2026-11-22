@@ -54,10 +54,11 @@ synthetic benchmark has about 1,045 meetings.
 | H4 | room type matches and capacity ≥ total students of all attending batches | suitable rooms |
 | H5 | the teacher is available in every period of the meeting | allowed starts |
 | H6 | a teacher with a daily limit teaches at most that many periods on any day | forward checking |
+| H7 | no meeting runs through the lunch break (`SchedulingConfig.lunchAfter`, 0 = none) | allowed starts |
 
 ### 1.4 Soft constraints (`solver/SoftConstraintEvaluator`)
 
-All four terms are sums of independent per-entity contributions. That is what makes
+All five terms are sums of independent per-entity contributions. That is what makes
 incremental evaluation possible (section 5).
 
 | Term | Definition (per entity, summed) | Zero means |
@@ -66,6 +67,7 @@ incremental evaluation possible (section 5).
 | Faculty load spread | for each teacher, with c_d periods taught on day d and N in the week: `Σ_d c_d² − (r(q+1)² + (D−r)q²)` with `q = ⌊N/D⌋`, `r = N mod D` | the most even daily split possible |
 | Session spacing | for each course: `Σ_d [C(n_d, 2) + 0.25 · n_d · n_{d+1}]` (pairs on the same day, pairs on consecutive days) | sessions spread out |
 | Building changes | for each student group and day: consecutive classes held in different buildings | no walking between blocks |
+| Room fit | for each meeting: its periods, if its room seats more than twice its students | small classes out of big halls |
 
 The sum of squared daily loads is convex and minimised exactly by the most even split.
 Subtracting that minimum makes 0 mean "as even as possible" whatever the teacher's total load.
@@ -261,8 +263,8 @@ The annealer starts from the search's clash-free timetable and keeps occupancy t
 - **Property tests against brute force** (`BacktrackingSolverTest`). On 3,000 random small
   instances mixing double periods, lab groups, combined classes and daily limits, an
   exhaustive enumerator decides feasibility. It shares no code with the solver. The solver
-  must return SOLVED with a valid timetable on each of the 464 feasible ones, and INFEASIBLE
-  on each of the 2,536 infeasible ones. This checks both soundness and completeness: an
+  must return SOLVED with a valid timetable on each of the 472 feasible ones, and INFEASIBLE
+  on each of the 2,528 infeasible ones. This checks both soundness and completeness: an
   over-eager pruning rule would show up as a missed solution. Each timetable the enumerator
   finds must also pass the validator, so all three cross-check one another. Nine of the
   infeasible instances pass every pre-check, so only the search proves them.
