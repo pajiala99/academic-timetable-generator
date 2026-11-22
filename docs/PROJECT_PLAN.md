@@ -9,7 +9,7 @@ agreed in week 1 and changed only by agreement.
 |---|---|---|---|
 | **A: Persistence** | MySQL schema, JDBC DAO layer, configuration, data import | `dao/*`, `src/main/resources/sql/schema.sql`, `db.properties.example`, `DataStore.importDataset` | `DataStoreTest` (H2 and MySQL runs) |
 | **B: Solver engine** | conflict graph, pre-checks, backtracking, soft objective, annealing, sample and synthetic data, CLI | `solver/*`, `service/SampleData`, `service/Cli` | `BacktrackingSolverTest`, `FeasibilityCheckerTest`, `CliqueFinderTest`, `SoftConstraintEvaluatorTest`, `SimulatedAnnealerTest`, `TimetableEngineTest` |
-| **C: Interface** | JavaFX application, forms and validation, generation progress, timetable views, CSV export | `ui/*`, `app.css`, `service/TimetableGrid`, `service/CsvExporter`, `service/TimetableService` | `CsvExporterTest`, GUI smoke runs |
+| **C: Interface** | JavaFX application and the browser version: forms and validation, generation progress, timetable views, PDF and CSV export | `ui/*`, `web/*`, `resources/web/*`, `app.css`, `service/TimetableGrid`, `service/CsvExporter`, `service/PdfExporter`, `service/TimetableService` | `CsvExporterTest`, `PdfExporterTest`, `WebServerTest`, GUI and browser runs |
 
 ### Contracts between members
 
@@ -73,12 +73,13 @@ mock them:
 | *(added)* lab groups | `Batch.parentId`; student groups in `Problem`; "Lab group of" in the batch editor |
 | *(added)* teachers' daily limits | `Faculty.maxPerDay`; forward checking in `BacktrackingSolver`; capacity check in `FeasibilityChecker`; annealer filter |
 | *(added)* printable timetables | "Save as PDF" (`service/PdfExporter`) and printing in `ui/TimetableTab` |
+| *(added)* web version | `web/WebServer`, `web/Api` (JSON over the same `TimetableService`), single-page app in `resources/web` |
 
 Additions beyond the proposal: double-period labs, lab groups, teachers' daily limits, combined
 classes, Hall's-condition and long-session checks with explanations, exact per-slot room
 matching inside the search, randomised restarts, re-validation of saved timetables, Save as
-PDF and CSV export, the embedded database fallback with in-place upgrades, and the headless
-CLI.
+PDF and CSV export, the embedded database fallback with in-place upgrades, a browser version
+of the whole app, and the headless CLI.
 
 ## Risks and mitigations
 

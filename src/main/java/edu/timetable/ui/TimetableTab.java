@@ -1,7 +1,6 @@
 package edu.timetable.ui;
 
 import edu.timetable.dao.DataAccessException;
-import edu.timetable.model.Batch;
 import edu.timetable.model.Dataset;
 import edu.timetable.model.SchedulingConfig;
 import edu.timetable.model.TimetableRun;
@@ -53,7 +52,6 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /** Weekly grid of a saved timetable, from the point of view of a batch, faculty member or room. */
 final class TimetableTab extends Tab implements Refreshable {
@@ -226,7 +224,6 @@ final class TimetableTab extends Tab implements Refreshable {
 
     private VBox cell(TimetableGrid tg, int day, int period) {
         List<TimetableGrid.Cell> cells = tg.at(day, period);
-        TimetableGrid.Perspective view = tg.perspective();
         VBox box = new VBox(2);
         box.getStyleClass().add("tt-cell");
         box.setMaxWidth(Double.MAX_VALUE);
@@ -237,53 +234,28 @@ final class TimetableTab extends Tab implements Refreshable {
         }
         StringBuilder tip = new StringBuilder();
         for (TimetableGrid.Cell c : cells) {
-            // In a batch's grid, name the lab group a session is for (e.g. "G1"), right after the code.
-            String group = view == TimetableGrid.Perspective.BATCH ? groupTag(c, tg.subject().id()) : "";
-            Label code = new Label(c.course().code() + group + (c.isMultiPeriod() ? "  " + c.periodRange() : ""));
+            Label code = new Label(tg.heading(c));
             code.getStyleClass().add("tt-code");
             Label title = new Label(c.course().title());
             title.getStyleClass().add("tt-title");
-            boolean sharedLine = view == TimetableGrid.Perspective.BATCH && c.course().isCombined();
-            Label details = new Label(sharedLine || !group.isEmpty() ? c.room().code() + " | " + c.faculty().name() : c.details(view));
+            Label details = new Label(tg.detailsLine(c));
             details.getStyleClass().add("tt-details");
             box.getChildren().addAll(code, title, details);
-            if (sharedLine) {
-                // Name the other batches: not the subject itself, nor (for a lab group) its own batch.
-                Batch self = data.batchById().get(tg.subject().id());
-                Label shared = new Label("Joint with " + String.join("+", c.batches().stream()
-                        .filter(b -> self == null || (b.id() != self.id() && !Objects.equals(self.parentId(), b.id())))
-                        .map(Batch::name).toList()));
+            String joint = tg.jointWith(c);
+            if (!joint.isEmpty()) {
+                Label shared = new Label(joint);
                 shared.getStyleClass().add("tt-shared");
                 shared.setWrapText(true);
                 box.getChildren().add(shared);
             }
             if (!tip.isEmpty()) tip.append("\n\n");
-            tip.append(c.course().code()).append(" - ").append(c.course().title())
-                    .append("\nMeeting ").append(c.meetingIndex() + 1).append(" of ").append(c.course().meetingsPerWeek())
-                    .append(c.isMultiPeriod() ? ", periods " + c.periodRange().replace("P", "") : "")
-                    .append(c.course().isCombined() ? "\nCombined class: " : "\nBatch: ").append(c.batchNames())
-                    .append(" (").append(c.batches().stream().mapToInt(Batch::studentCount).sum()).append(" students)")
-                    .append("\nFaculty: ").append(c.faculty().name())
-                    .append("\nRoom: ").append(c.room().code()).append(", ").append(c.room().building())
-                    .append(" (").append(c.room().capacity()).append(" seats, ").append(c.room().type()).append(")");
+            tip.append(TimetableGrid.tooltip(c));
         }
-        String code = cells.get(0).course().code().replaceAll("L$", "");
-        box.setStyle("-fx-background-color: " + PALETTE[Math.floorMod(code.hashCode(), PALETTE.length)] + ";");
+        String key = TimetableGrid.colourKey(cells.get(0));
+        box.setStyle("-fx-background-color: " + PALETTE[Math.floorMod(key.hashCode(), PALETTE.length)] + ";");
         if (tg.clashAt(day, period)) box.getStyleClass().add("tt-clash");
         Tooltip.install(box, new Tooltip(tip.toString()));
         return box;
-    }
-
-    /** " · G1" when the session is for lab groups other than the grid's own subject, shortened by their batch's name. */
-    private String groupTag(TimetableGrid.Cell c, int subjectId) {
-        List<String> names = c.batches().stream()
-                .filter(b -> b.isGroup() && b.id() != subjectId)
-                .map(b -> {
-                    Batch parent = data.batchById().get(b.parentId());
-                    return parent != null && b.name().startsWith(parent.name()) ? b.name().substring(parent.name().length()).trim() : b.name();
-                })
-                .toList();
-        return names.isEmpty() ? "" : " \u00b7 " + String.join("+", names);
     }
 
     private void updateStatus() {

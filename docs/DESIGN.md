@@ -1,6 +1,6 @@
-# Design and Algorithms
+# SlotWise: Design and Algorithms
 
-This document describes how the timetable generator models the problem, the algorithms it
+This document describes how SlotWise, the timetable generator, models the problem, the algorithms it
 uses, why they are correct, how they were verified and what they cannot do yet. Code
 references point to `src/main/java/edu/timetable/`.
 
@@ -317,7 +317,27 @@ settings: key/value pairs (shape of the week)
   **upgraded in place**: missing columns are detected through JDBC metadata and added. An **embedded H2 database in MySQL mode**
   is offered when MySQL is unreachable.
 
-## 8. Limitations and future work
+## 8. Two front ends
+
+The JavaFX desktop app (`ui/`) and the browser version (`web/`) sit on the same
+`TimetableService`, `DataStore` and engine. They also share the rules for labelling a timetable
+cell (`TimetableGrid.heading / detailsLine / jointWith`), so both show the same thing.
+
+- **Web server**: the JDK's built-in `HttpServer`, bound to `127.0.0.1` only, since there are no
+  accounts. `Api` maps JSON routes (`/api/rooms`, `/api/generate`, `/api/runs/{id}/grid`, ...)
+  to the service, with the same validation messages as the desktop forms. Database refusals
+  become HTTP 409 with a plain explanation, and bad input becomes 400.
+- **Generation** runs on one background thread (`GenerationJob`). The page polls its stage,
+  progress, log and cost trace, and can cancel it.
+- **Pages** are plain HTML, CSS and JavaScript served from the jar. There is no build step and
+  no framework. Text is always inserted as text, never as HTML. A print stylesheet turns any
+  timetable, or every timetable in a view, into A4 landscape pages, which the browser can save
+  as PDF.
+- **Tests**: `WebServerTest` drives the API over real HTTP. During development the pages were
+  driven end to end in Chromium (Playwright): every form, the validation and refusal messages,
+  generation, every view, printing to PDF and a phone-width layout.
+
+## 9. Limitations and future work
 
 - Lab groups are one level deep (a group cannot itself be split), and a session cannot span
   a lunch break. The week is a plain grid of periods.

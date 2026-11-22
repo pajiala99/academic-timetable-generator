@@ -1,9 +1,12 @@
-# Automated Academic Timetable Generator
+# SlotWise
+
+**Clash-free timetables, proven.** An automated academic timetable generator.
 
 [![ci](https://github.com/pajiala99/academic-timetable-generator/actions/workflows/ci.yml/badge.svg)](https://github.com/pajiala99/academic-timetable-generator/actions/workflows/ci.yml)
 
 A JavaFX desktop application, backed by MySQL through a JDBC DAO layer, that builds
-**clash-free weekly timetables for an entire department**.
+**clash-free weekly timetables for an entire department**. The same engine also runs **in your
+browser** (`--web`): one engine, two front ends.
 
 Timetabling is a hard problem (the decision version is NP-complete), so this is not just
 forms over a database. Every course is decomposed into its weekly meetings and the problem is
@@ -48,7 +51,9 @@ spacing and building changes. It rejects every move that would break a hard cons
 - **Save as PDF** (one A4 page per batch, teacher or room; no printer needed), **printing**,
   and **CSV export** of the visible grid or of the complete timetable (opens in Excel).
 - **Embedded fallback database** (H2 in MySQL mode), so the app runs before MySQL is set up.
-- **Headless CLI** for demos and benchmarks, and **47 automated tests**, including
+- **Web version**: the same app in your browser, with a dashboard, live generation progress and
+  printable timetables. It runs on your own computer only.
+- **Headless CLI** for demos and benchmarks, and **50 automated tests**, including
   property tests that check the solver against brute-force enumeration on 3,000 random
   instances.
 
@@ -106,7 +111,8 @@ Then open the **Generate** tab and click **Generate timetable**. The result open
 
 ```bash
 ./mvnw package                     # also runs the tests; add -DskipTests to skip them
-java -jar target/timetable-generator-1.0.0-all.jar            # or add --embedded / --sample
+java -jar target/slotwise-1.1.0-all.jar           # desktop app; add --embedded / --sample
+java -jar target/slotwise-1.1.0-all.jar --web     # browser version (see below)
 ```
 
 The jar bundles JavaFX for the operating system it was **built on**, so build it on the kind
@@ -116,6 +122,30 @@ of machine you will run it on.
 
 Open the project folder as a Maven project in IntelliJ IDEA, Eclipse or VS Code.
 Run the Maven goal `javafx:run`, or run the main class `edu.timetable.ui.Launcher`.
+
+## Web version (in your browser)
+
+```bash
+java -jar target/slotwise-1.1.0-all.jar --web --sample        # or: --embedded, --port 9000, --no-browser
+```
+
+SlotWise starts a small web server **on your own computer** (`127.0.0.1`, port 8080 or the
+next free one) and opens your browser at `http://localhost:8080`. Nobody else on the network
+can reach it. It uses the same database settings as the desktop app; if MySQL cannot be
+reached it says so in the terminal and uses the embedded database. Press Ctrl+C to stop it.
+
+- **Dashboard**: counts, the latest timetable, and "Generate timetable" in one click.
+- **Rooms, Batches, Faculty, Courses**: searchable tables with add / edit / delete forms. They
+  cover lab groups, daily limits, the availability grid, double periods and combined classes,
+  with the same validation as the desktop app.
+- **Generate**: every parameter and weight, a live progress bar, the run log and the cost curve.
+- **Timetable**: per batch, lab group, teacher or room. **Print / Save as PDF** uses the
+  browser's print dialog (choose "Save as PDF"; no printer needed). **Print every batch**
+  prints one A4 page each, and **Download CSV** exports the whole timetable.
+
+| Dashboard | Timetable in the browser |
+|---|---|
+| ![Web dashboard](docs/screenshots/web-dashboard.png) | ![Web timetable](docs/screenshots/web-timetable.png) |
 
 ## Setting up MySQL
 
@@ -224,7 +254,7 @@ solved; 7 needed restarts, the hardest 6,975 nodes and 0.27 s.
 ./mvnw test
 ```
 
-There are 47 tests. Highlights:
+There are 50 tests. Highlights:
 
 - the solver agrees with **exhaustive brute force** on 3,000 random small instances with
   double periods, lab groups, combined classes and daily limits (464 feasible, 2,536
@@ -234,6 +264,7 @@ There are 47 tests. Highlights:
 - the clique finder matches exhaustive search;
 - the annealer's incremental cost deltas equal full recomputation, and it never breaks a
   hard constraint;
+- the web API works over real HTTP: pages, validation, refusals, generation, grids and CSV;
 - the DAO layer works against H2 in MySQL mode, and a database created by the first release is
   upgraded in place (new columns added, data kept).
 
@@ -252,7 +283,8 @@ These all pass on MySQL 8.0.46.
 
 ```
 academic-timetable-generator/
-├── pom.xml, mvnw, mvnw.cmd          build (Java 17+, JavaFX 21, MySQL Connector/J 8.4, H2, JUnit 5)
+├── pom.xml, mvnw, mvnw.cmd          build (Java 17+, JavaFX 21, MySQL Connector/J 8.4, H2, Jackson,
+│                                    PDFBox, JUnit 5)
 ├── db.properties.example            database settings template
 ├── docs/                            DESIGN.md, PROJECT_PLAN.md, screenshots
 └── src/
@@ -262,10 +294,12 @@ academic-timetable-generator/
     │   ├── solver/    engine: Problem, FeasibilityChecker, CliqueFinder, BacktrackingSolver,
     │   │              SoftConstraintEvaluator, SimulatedAnnealer, HardConstraintValidator,
     │   │              TimetableEngine
-    │   ├── service/   use cases: TimetableService, SampleData, TimetableGrid, CsvExporter, Cli
-    │   └── ui/        JavaFX: TimetableApp, entity tabs, GenerateTab, TimetableTab, dialogs
-    ├── main/resources/   sql/schema.sql, ui/app.css
-    └── test/java/        solver, DAO and export tests
+    │   ├── service/   use cases: TimetableService, SampleData, TimetableGrid, CsvExporter,
+    │   │              PdfExporter, Cli
+    │   ├── ui/        JavaFX: TimetableApp, entity tabs, GenerateTab, TimetableTab, dialogs
+    │   └── web/       browser version: WebServer, Api (JSON), GenerationJob, Http
+    ├── main/resources/   sql/schema.sql, ui/app.css, web/ (index.html, app.js, style.css)
+    └── test/java/        solver, DAO, export and web API tests
 ```
 
 ## Troubleshooting

@@ -90,11 +90,13 @@ public final class TimetableGrid {
     private final Perspective perspective;
     private final Subject subject;
     private final List<List<Cell>> cells;
+    private final Map<Integer, Batch> batchById;
 
-    private TimetableGrid(SchedulingConfig config, Perspective perspective, Subject subject) {
+    private TimetableGrid(SchedulingConfig config, Perspective perspective, Subject subject, Map<Integer, Batch> batchById) {
         this.config = config;
         this.perspective = perspective;
         this.subject = subject;
+        this.batchById = batchById;
         this.cells = new ArrayList<>();
         for (int i = 0; i < config.slotCount(); i++) cells.add(new ArrayList<>());
     }
@@ -114,9 +116,9 @@ public final class TimetableGrid {
      * also shows the whole-class meetings of its batch.
      */
     public static TimetableGrid build(Dataset data, List<TimetableEntry> entries, Perspective perspective, Subject subject) {
-        TimetableGrid grid = new TimetableGrid(data.config(), perspective, subject);
-        Map<Integer, Course> courses = data.courseById();
         Map<Integer, Batch> batches = data.batchById();
+        TimetableGrid grid = new TimetableGrid(data.config(), perspective, subject, batches);
+        Map<Integer, Course> courses = data.courseById();
         Map<Integer, Faculty> faculty = data.facultyById();
         Map<Integer, Room> rooms = data.roomById();
         Map<Integer, Set<Integer>> groupsOfBatch = new HashMap<>();
@@ -154,6 +156,60 @@ public final class TimetableGrid {
         if (b.isGroup() && b.parentId() == subjectId) return true;      // a lab group's session, in its batch's grid
         Batch subject = batches.get(subjectId);
         return subject != null && subject.isGroup() && subject.parentId() == b.id(); // the batch's class, in a group's grid
+    }
+
+    // ---- how a cell is labelled, shared by the desktop and web front ends -----------------------
+
+    /** First line of a cell: code, the lab group in a batch's grid (" · G1"), and "P3-P4" for a long session. */
+    public String heading(Cell c) {
+        String group = groupTag(c);
+        return c.course().code() + (group.isEmpty() ? "" : " \u00b7 " + group) + (c.isMultiPeriod() ? "  " + c.periodRange() : "");
+    }
+
+    /** Third line of a cell: what the grid's subject does not already say. */
+    public String detailsLine(Cell c) {
+        boolean short_ = perspective == Perspective.BATCH && (c.course().isCombined() || !groupTag(c).isEmpty());
+        return short_ ? c.room().code() + " | " + c.faculty().name() : c.details(perspective);
+    }
+
+    /** "Joint with CSE-1B" for a combined class in a batch's grid, otherwise empty. */
+    public String jointWith(Cell c) {
+        if (perspective != Perspective.BATCH || !c.course().isCombined()) return "";
+        // Name the other batches: not the subject itself, nor (for a lab group) its own batch.
+        Batch self = batchById.get(subject.id());
+        List<String> others = c.batches().stream()
+                .filter(b -> self == null || (b.id() != self.id() && !Objects.equals(self.parentId(), b.id())))
+                .map(Batch::name).toList();
+        return "Joint with " + String.join("+", others);
+    }
+
+    /** Lab groups other than the grid's own subject that a session is for, shortened by their batch's name ("G1"). */
+    private String groupTag(Cell c) {
+        if (perspective != Perspective.BATCH) return "";
+        return c.batches().stream()
+                .filter(b -> b.isGroup() && b.id() != subject.id())
+                .map(b -> {
+                    Batch parent = batchById.get(b.parentId());
+                    return parent != null && b.name().startsWith(parent.name()) ? b.name().substring(parent.name().length()).trim() : b.name();
+                })
+                .collect(Collectors.joining("+"));
+    }
+
+    /** Multi-line description for a tooltip. */
+    public static String tooltip(Cell c) {
+        return c.course().code() + " - " + c.course().title()
+                + "\nMeeting " + (c.meetingIndex() + 1) + " of " + c.course().meetingsPerWeek()
+                + (c.isMultiPeriod() ? ", periods " + c.periodRange().replace("P", "") : "")
+                + (c.course().isCombined() ? "\nCombined class: " : "\nBatch: ") + c.batchNames()
+                + " (" + c.batches().stream().mapToInt(Batch::studentCount).sum() + " students)"
+                + "\nFaculty: " + c.faculty().name()
+                + "\nRoom: " + c.room().code() + ", " + c.room().building()
+                + " (" + c.room().capacity() + " seats, " + c.room().type() + ")";
+    }
+
+    /** Key for colouring: a course and its lab share a colour (CS101 and CS101L). */
+    public static String colourKey(Cell c) {
+        return c.course().code().replaceAll("L$", "");
     }
 
     /** Do two of the meetings shown in this period clash? (Two lab groups in different labs do not.) */

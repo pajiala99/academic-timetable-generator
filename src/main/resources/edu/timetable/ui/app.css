@@ -15,6 +15,11 @@
     -fx-font-weight: bold;
 }
 
+.tagline {
+    -fx-text-fill: #93c5fd;
+    -fx-font-size: 13px;
+}
+
 .header .hint {
     -fx-text-fill: #cbd5e1;
 }
