@@ -26,8 +26,8 @@ public final class CsvExporter {
     }
 
     /**
-     * One row per meeting and attending batch, sorted by batch, day and period, so filtering
-     * on the Batch column gives that batch's complete week. Combined classes therefore appear
+     * One row per meeting and attending batch, sorted by batch, day and period ("3-4" for a
+     * double period), so filtering on the Batch column gives that batch's own classes. Combined classes therefore appear
      * once per batch, with the other batches listed under "Shared with".
      */
     public static void writeEntries(Path file, Dataset data, List<TimetableEntry> entries) throws IOException {
@@ -44,13 +44,15 @@ public final class CsvExporter {
             List<String> names = c.batchIds().stream().map(batches::get).filter(b -> b != null).map(Batch::name).toList();
             for (String batch : names) {
                 String others = names.stream().filter(n -> !n.equals(batch)).collect(Collectors.joining("+"));
-                rows.add(new String[]{batch, SchedulingConfig.dayName(e.day()), Integer.toString(e.period() + 1),
+                String period = c.periodsPerMeeting() == 1 ? Integer.toString(e.period() + 1)
+                        : (e.period() + 1) + "-" + (e.period() + c.periodsPerMeeting());
+                rows.add(new String[]{batch, SchedulingConfig.dayName(e.day()), period,
                         c.code(), c.title(), f == null ? "?" : f.name(), r.code(), r.building(), c.roomType().name(), others});
             }
         }
         rows.sort(Comparator.<String[], String>comparing(r -> r[0])
                 .thenComparing(r -> dayIndex(r[1]))
-                .thenComparing(r -> Integer.parseInt(r[2])));
+                .thenComparing(r -> Integer.parseInt(r[2].split("-")[0])));
         try (Writer w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
             line(w, "Batch", "Day", "Period", "Course", "Title", "Faculty", "Room", "Building", "Type", "Shared with");
             for (String[] r : rows) line(w, r);

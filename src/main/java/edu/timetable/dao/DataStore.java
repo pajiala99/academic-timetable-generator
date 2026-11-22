@@ -55,9 +55,12 @@ public final class DataStore {
     public void clearAll() {
         try (Connection c = database.connect(); Statement st = c.createStatement()) {
             for (String table : new String[]{"timetable_entry", "timetable_run", "course_batch", "course", "faculty_unavailability",
-                    "faculty", "batch", "room"}) {
+                    "faculty"}) {
                 st.executeUpdate("DELETE FROM " + table);
             }
+            st.executeUpdate("DELETE FROM batch WHERE parent_id IS NOT NULL"); // lab groups before the batches they belong to
+            st.executeUpdate("DELETE FROM batch");
+            st.executeUpdate("DELETE FROM room");
         } catch (SQLException e) {
             throw new DataAccessException("Could not clear the database: " + e.getMessage(), e);
         }
@@ -68,12 +71,17 @@ public final class DataStore {
         settings.saveConfig(data.config());
         for (Room r : data.rooms()) rooms.insert(r);
         Map<Integer, Integer> batchIds = new HashMap<>();
-        for (Batch b : data.batches()) batchIds.put(b.id(), batches.insert(b).id());
+        for (Batch b : data.batches()) if (!b.isGroup()) batchIds.put(b.id(), batches.insert(b).id());
+        for (Batch b : data.batches()) {
+            if (b.isGroup()) {
+                batchIds.put(b.id(), batches.insert(new Batch(0, b.name(), b.studentCount(), batchIds.get(b.parentId()))).id());
+            }
+        }
         Map<Integer, Integer> facultyIds = new HashMap<>();
         for (Faculty f : data.faculty()) facultyIds.put(f.id(), faculty.insert(f).id());
         for (Course c : data.courses()) {
             courses.insert(new Course(0, c.code(), c.title(), facultyIds.get(c.facultyId()),
-                    c.batchIds().stream().map(batchIds::get).toList(), c.meetingsPerWeek(), c.roomType()));
+                    c.batchIds().stream().map(batchIds::get).toList(), c.meetingsPerWeek(), c.periodsPerMeeting(), c.roomType()));
         }
     }
 }

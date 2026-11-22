@@ -24,9 +24,10 @@ public final class SampleData {
     }
 
     /**
-     * A Computer Science department: 6 batches, 16 faculty, 11 rooms in 2 buildings, a 5 x 7
-     * week, and 45 courses (136 weekly meetings) of which three are combined classes that two
-     * sections attend together in the seminar hall.
+     * A Computer Science department: 6 batches (the two first-year sections split into lab
+     * groups G1 and G2), 16 faculty with a daily teaching limit, 11 rooms in 2 buildings, a 5 x 7
+     * week, and 49 courses (126 meetings, 144 teaching periods). Labs are double periods; three combined classes are attended by two
+     * sections together in the seminar hall.
      */
     public static Dataset department() {
         SchedulingConfig config = new SchedulingConfig(5, 7);
@@ -45,35 +46,41 @@ public final class SampleData {
         List<Batch> batches = List.of(
                 new Batch(1, "CSE-1A", 60), new Batch(2, "CSE-1B", 60),
                 new Batch(3, "CSE-2A", 60), new Batch(4, "CSE-2B", 55),
-                new Batch(5, "CSE-3A", 58), new Batch(6, "CSE-3B", 52));
+                new Batch(5, "CSE-3A", 58), new Batch(6, "CSE-3B", 52),
+                // First-year sections take their labs in two groups of 30.
+                new Batch(7, "CSE-1A G1", 30, 1), new Batch(8, "CSE-1A G2", 30, 1),
+                new Batch(9, "CSE-1B G1", 30, 2), new Batch(10, "CSE-1B G2", 30, 2));
+        int limit = 4; // periods a day
         List<Faculty> faculty = List.of(
-                new Faculty(1, "Dr. Anita Rao", wholeDay(4, config)),             // Fridays: dean's office
-                new Faculty(2, "Dr. Vikram Mehta"),
-                new Faculty(3, "Prof. Sunita Kulkarni"),
-                new Faculty(4, "Dr. Rahul Verma"),
-                new Faculty(5, "Dr. Neha Joshi", Set.of(new TimeSlot(0, 0), new TimeSlot(2, 0))),
-                new Faculty(6, "Ms. Priya Nair"),
-                new Faculty(7, "Dr. Arjun Singh"),
-                new Faculty(8, "Prof. Kavita Desai"),
-                new Faculty(9, "Dr. Sanjay Gupta"),
-                new Faculty(10, "Dr. Meera Pillai"),
-                new Faculty(11, "Mr. Karan Malhotra"),
-                new Faculty(12, "Prof. Deepak Reddy", periods(config, 0, 0, 1, 2)), // Monday mornings
-                new Faculty(13, "Dr. Lakshmi Menon"),
-                new Faculty(14, "Dr. Amit Banerjee", periods(config, 3, 4, 5, 6)), // Thursday afternoons
-                new Faculty(15, "Dr. Farah Khan"),
-                new Faculty(16, "Prof. Rohan Das"));
+                new Faculty(1, "Dr. Anita Rao", wholeDay(4, config), 3),             // Fridays: dean's office
+                new Faculty(2, "Dr. Vikram Mehta", Set.of(), limit),
+                new Faculty(3, "Prof. Sunita Kulkarni", Set.of(), limit),
+                new Faculty(4, "Dr. Rahul Verma", Set.of(), limit),
+                new Faculty(5, "Dr. Neha Joshi", Set.of(new TimeSlot(0, 0), new TimeSlot(2, 0)), limit),
+                new Faculty(6, "Ms. Priya Nair", Set.of(), limit),
+                new Faculty(7, "Dr. Arjun Singh", Set.of(), limit),
+                new Faculty(8, "Prof. Kavita Desai", Set.of(), limit),
+                new Faculty(9, "Dr. Sanjay Gupta", Set.of(), limit),
+                new Faculty(10, "Dr. Meera Pillai", Set.of(), limit),
+                new Faculty(11, "Mr. Karan Malhotra", Set.of(), limit),
+                new Faculty(12, "Prof. Deepak Reddy", periods(config, 0, 0, 1, 2), limit), // Monday mornings
+                new Faculty(13, "Dr. Lakshmi Menon", Set.of(), limit),
+                new Faculty(14, "Dr. Amit Banerjee", periods(config, 3, 4, 5, 6), limit), // Thursday afternoons
+                new Faculty(15, "Dr. Farah Khan", Set.of(), limit),
+                new Faculty(16, "Prof. Rohan Das", Set.of(), limit));
 
         List<Course> courses = new ArrayList<>();
-        // Year 1
+        // Year 1: lectures for the whole section, double-period labs per lab group.
         for (int b : new int[]{1, 2}) {
             add(courses, "MA101", "Engineering Mathematics I", 1, b, 4, LECTURE);
             add(courses, "PH101", "Engineering Physics", 2, b, 3, LECTURE);
             add(courses, "CS101", "Programming in C", 3, b, 4, LECTURE);
             add(courses, "EE101", "Basic Electrical Engineering", 5, b, 3, LECTURE);
             add(courses, "HS101", "Communication Skills", 6, b, 2, LECTURE);
-            add(courses, "CS101L", "Programming Lab", 4, b, 3, LAB);
-            add(courses, "PH101L", "Physics Lab", b == 1 ? 2 : 9, b, 2, LAB);
+        }
+        for (int g : new int[]{7, 8, 9, 10}) {
+            addLab(courses, "CS101L", "Programming Lab", g <= 8 ? 4 : 11, g, 1);
+            addLab(courses, "PH101L", "Physics Lab", g <= 8 ? 2 : 9, g, 1);
         }
         // Year 2
         for (int b : new int[]{3, 4}) {
@@ -82,8 +89,8 @@ public final class SampleData {
             add(courses, "CS202", "Digital Logic Design", 9, b, 3, LECTURE);
             add(courses, "CS203", "Object-Oriented Programming", 10, b, 3, LECTURE);
             add(courses, "HS201", "Economics for Engineers", 6, b, 2, LECTURE);
-            add(courses, "CS201L", "Data Structures Lab", 11, b, 3, LAB);
-            add(courses, "CS203L", "Java Lab", b == 3 ? 4 : 10, b, 2, LAB);
+            addLab(courses, "CS201L", "Data Structures Lab", 11, b, 2);
+            addLab(courses, "CS203L", "Java Lab", b == 3 ? 4 : 10, b, 1);
         }
         // Year 3
         for (int b : new int[]{5, 6}) {
@@ -92,8 +99,8 @@ public final class SampleData {
             add(courses, "CS303", "Operating Systems", 14, b, 4, LECTURE);
             add(courses, "CS304", "Computer Networks", 15, b, 3, LECTURE);
             add(courses, "CS305", "Theory of Computation", 16, b, 3, LECTURE);
-            add(courses, "CS302L", "DBMS Lab", b == 5 ? 11 : 13, b, 2, LAB);
-            add(courses, "CS303L", "Operating Systems Lab", 14, b, 2, LAB);
+            addLab(courses, "CS302L", "DBMS Lab", 13, b, 1);
+            addLab(courses, "CS303L", "Operating Systems Lab", 14, b, 1);
         }
         // Combined classes: both sections of a year attend together.
         addCombined(courses, "HS102", "Environmental Studies", 6, List.of(1, 2), 2);
@@ -117,8 +124,8 @@ public final class SampleData {
 
     /**
      * A random department for stress tests and benchmarks. Each batch gets roughly
-     * {@code meetingsPerBatch} weekly meetings (out of 35 slots), split into courses of 2-5
-     * meetings with one lab course; faculty loads are capped at 20 and about a third of the
+     * {@code meetingsPerBatch} weekly teaching periods (out of 35 slots), split into courses of
+     * 2-5 meetings and one lab course of double-period sessions; faculty loads are capped at 20 and about a third of the
      * faculty have a few unavailable slots. Rooms are sized for about 90% utilisation of their slots.
      * Depending on the parameters the instance may be easy, hard, or infeasible.
      */
@@ -164,16 +171,19 @@ public final class SampleData {
             int remaining = meetingsPerBatch - electiveMeetings[b.id() - 1];
             int k = 0;
             while (remaining > 0) {
-                boolean lab = k == 0;
-                int meetings = Math.min(remaining, lab ? 2 + rnd.nextInt(2) : 2 + rnd.nextInt(4));
+                boolean lab = k == 0 && remaining >= 2; // one double-period lab course per batch
+                int length = lab ? 2 : 1;
+                int meetings = lab ? Math.min(remaining / 2, 1 + rnd.nextInt(2)) : Math.min(remaining, 2 + rnd.nextInt(4));
+                int periods = meetings * length;
                 int f = rnd.nextInt(facultyCount);
-                for (int tries = 0; tries < facultyCount && load[f] + meetings > 20; tries++) f = (f + 1) % facultyCount;
-                load[f] += meetings;
+                for (int tries = 0; tries < facultyCount && load[f] + periods > 20; tries++) f = (f + 1) % facultyCount;
+                load[f] += periods;
                 k++;
-                add(courses, "C" + b.id() + "-" + k, "Course " + k + " of " + b.name(), f + 1, b.id(), meetings, lab ? LAB : LECTURE);
-                remaining -= meetings;
-                if (lab) labMeetings += meetings;
-                else lectureMeetings += meetings;
+                courses.add(new Course(courses.size() + 1, "C" + b.id() + "-" + k, "Course " + k + " of " + b.name(), f + 1,
+                        List.of(b.id()), meetings, length, lab ? LAB : LECTURE));
+                remaining -= periods;
+                if (lab) labMeetings += periods;
+                else lectureMeetings += periods;
             }
         }
 
@@ -181,7 +191,9 @@ public final class SampleData {
         List<Room> rooms = new ArrayList<>();
         String[] buildings = {"North", "South", "East"};
         int lectureRooms = (int) Math.ceil(lectureMeetings / (config.slotCount() * roomUtilisation));
-        int labRooms = (int) Math.ceil(labMeetings / (config.slotCount() * roomUtilisation));
+        // Lab sessions are double periods: a lab room fits periods / 2 of them a day.
+        int labSessionsPerRoom = config.days() * (config.periodsPerDay() / 2);
+        int labRooms = (int) Math.ceil(labMeetings / 2.0 / (labSessionsPerRoom * roomUtilisation));
         for (int i = 0; i < lectureRooms; i++) {
             int capacity = i % 4 == 3 ? 50 : 60 + 10 * rnd.nextInt(2);
             rooms.add(new Room(rooms.size() + 1, "R" + (101 + i), buildings[i % 3], capacity, LECTURE));
@@ -197,6 +209,11 @@ public final class SampleData {
     private static void add(List<Course> courses, String code, String title, int facultyId, int batchId,
                             int meetings, RoomType type) {
         courses.add(new Course(courses.size() + 1, code, title, facultyId, batchId, meetings, type));
+    }
+
+    /** A lab of double-period sessions. */
+    private static void addLab(List<Course> courses, String code, String title, int facultyId, int batchId, int sessions) {
+        courses.add(new Course(courses.size() + 1, code, title, facultyId, List.of(batchId), sessions, 2, LAB));
     }
 
     private static void addCombined(List<Course> courses, String code, String title, int facultyId,

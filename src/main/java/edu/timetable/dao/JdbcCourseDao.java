@@ -14,9 +14,9 @@ import java.util.Optional;
 
 /** Courses and the batches attending them (the {@code course_batch} join table). */
 public final class JdbcCourseDao extends JdbcSupport implements CourseDao {
-    private static final String COLUMNS = "id, code, title, faculty_id, meetings_per_week, room_type";
+    private static final String COLUMNS = "id, code, title, faculty_id, meetings_per_week, periods_per_meeting, room_type";
 
-    private record Row(int id, String code, String title, int facultyId, int meetings, RoomType type) {
+    private record Row(int id, String code, String title, int facultyId, int meetings, int periods, RoomType type) {
     }
 
     public JdbcCourseDao(Database db) {
@@ -42,7 +42,8 @@ public final class JdbcCourseDao extends JdbcSupport implements CourseDao {
     private List<Course> load(String sql, Object... params) {
         try (Connection c = db.connect()) {
             List<Row> rows = query(c, sql, rs -> new Row(rs.getInt("id"), rs.getString("code"), rs.getString("title"),
-                    rs.getInt("faculty_id"), rs.getInt("meetings_per_week"), RoomType.valueOf(rs.getString("room_type"))), params);
+                    rs.getInt("faculty_id"), rs.getInt("meetings_per_week"), rs.getInt("periods_per_meeting"),
+                    RoomType.valueOf(rs.getString("room_type"))), params);
             Map<Integer, List<Integer>> batches = new HashMap<>();
             query(c, "SELECT course_id, batch_id FROM course_batch", rs -> {
                 batches.computeIfAbsent(rs.getInt(1), k -> new ArrayList<>()).add(rs.getInt(2));
@@ -52,7 +53,7 @@ public final class JdbcCourseDao extends JdbcSupport implements CourseDao {
             for (Row r : rows) {
                 List<Integer> ids = batches.getOrDefault(r.id(), List.of());
                 if (ids.isEmpty()) continue; // cannot happen through this DAO; skip rather than fail on hand-edited data
-                out.add(new Course(r.id(), r.code(), r.title(), r.facultyId(), ids, r.meetings(), r.type()));
+                out.add(new Course(r.id(), r.code(), r.title(), r.facultyId(), ids, r.meetings(), r.periods(), r.type()));
             }
             return out;
         } catch (SQLException e) {
@@ -63,8 +64,9 @@ public final class JdbcCourseDao extends JdbcSupport implements CourseDao {
     @Override
     public Course insert(Course course) {
         return transaction(c -> {
-            int id = insert(c, "INSERT INTO course (code, title, faculty_id, meetings_per_week, room_type) VALUES (?, ?, ?, ?, ?)",
-                    course.code(), course.title(), course.facultyId(), course.meetingsPerWeek(), course.roomType().name());
+            int id = insert(c, "INSERT INTO course (code, title, faculty_id, meetings_per_week, periods_per_meeting, room_type) "
+                            + "VALUES (?, ?, ?, ?, ?, ?)", course.code(), course.title(), course.facultyId(),
+                    course.meetingsPerWeek(), course.periodsPerMeeting(), course.roomType().name());
             writeBatches(c, id, course.batchIds());
             return course.withId(id);
         });
@@ -73,8 +75,9 @@ public final class JdbcCourseDao extends JdbcSupport implements CourseDao {
     @Override
     public void update(Course course) {
         transaction(c -> {
-            update(c, "UPDATE course SET code = ?, title = ?, faculty_id = ?, meetings_per_week = ?, room_type = ? WHERE id = ?",
-                    course.code(), course.title(), course.facultyId(), course.meetingsPerWeek(), course.roomType().name(), course.id());
+            update(c, "UPDATE course SET code = ?, title = ?, faculty_id = ?, meetings_per_week = ?, periods_per_meeting = ?, "
+                            + "room_type = ? WHERE id = ?", course.code(), course.title(), course.facultyId(),
+                    course.meetingsPerWeek(), course.periodsPerMeeting(), course.roomType().name(), course.id());
             update(c, "DELETE FROM course_batch WHERE course_id = ?", course.id());
             writeBatches(c, course.id(), course.batchIds());
             return null;

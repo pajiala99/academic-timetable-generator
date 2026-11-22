@@ -36,13 +36,15 @@ class CsvExporterTest {
         assertEquals(1 + expected, lines.size());
         assertTrue(lines.stream().anyMatch(l -> l.startsWith("CSE-1A,") && l.contains("HS102") && l.endsWith(",CSE-1B")));
 
-        TimetableGrid.Subject batch = TimetableGrid.subjects(data, TimetableGrid.Perspective.BATCH).get(0);
+        TimetableGrid.Subject batch = TimetableGrid.subjects(data, TimetableGrid.Perspective.BATCH).stream()
+                .filter(x -> x.name().equals("CSE-1A G1")).findFirst().orElseThrow();
         TimetableGrid grid = TimetableGrid.build(data, r.entries(), TimetableGrid.Perspective.BATCH, batch);
         Path view = dir.resolve("view.csv");
         CsvExporter.writeGrid(view, grid);
         List<String> rows = Files.readAllLines(view);
         assertEquals(1 + data.config().days(), rows.size());
         assertTrue(rows.get(0).startsWith("Batch: " + batch.name() + ",P1,"));
-        assertEquals(23, grid.occupiedCells()); // CSE-1A: 21 own meetings + 2 of the combined HS102
+        // Lab group G1 sits through CSE-1A's 18 lecture periods (HS102 included) and its own two double-period labs.
+        assertEquals(22, grid.occupiedCells());
     }
 }

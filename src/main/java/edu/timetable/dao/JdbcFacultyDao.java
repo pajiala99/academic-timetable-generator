@@ -28,8 +28,9 @@ public final class JdbcFacultyDao extends JdbcSupport implements FacultyDao {
                 off.computeIfAbsent(rs.getInt(1), k -> new HashSet<>()).add(new TimeSlot(rs.getInt(2), rs.getInt(3)));
                 return null;
             });
-            return query(c, "SELECT id, name FROM faculty ORDER BY name",
-                    rs -> new Faculty(rs.getInt("id"), rs.getString("name"), off.getOrDefault(rs.getInt("id"), Set.of())));
+            return query(c, "SELECT id, name, max_per_day FROM faculty ORDER BY name",
+                    rs -> new Faculty(rs.getInt("id"), rs.getString("name"), off.getOrDefault(rs.getInt("id"), Set.of()),
+                            rs.getInt("max_per_day")));
         } catch (SQLException e) {
             throw new DataAccessException(e.getMessage(), e);
         }
@@ -40,8 +41,9 @@ public final class JdbcFacultyDao extends JdbcSupport implements FacultyDao {
         try (Connection c = db.connect()) {
             List<TimeSlot> off = query(c, "SELECT day_index, period_index FROM faculty_unavailability WHERE faculty_id = ?",
                     rs -> new TimeSlot(rs.getInt(1), rs.getInt(2)), id);
-            return query(c, "SELECT id, name FROM faculty WHERE id = ?",
-                    rs -> new Faculty(rs.getInt("id"), rs.getString("name"), new HashSet<>(off)), id).stream().findFirst();
+            return query(c, "SELECT id, name, max_per_day FROM faculty WHERE id = ?",
+                    rs -> new Faculty(rs.getInt("id"), rs.getString("name"), new HashSet<>(off), rs.getInt("max_per_day")), id)
+                    .stream().findFirst();
         } catch (SQLException e) {
             throw new DataAccessException(e.getMessage(), e);
         }
@@ -50,7 +52,7 @@ public final class JdbcFacultyDao extends JdbcSupport implements FacultyDao {
     @Override
     public Faculty insert(Faculty f) {
         return transaction(c -> {
-            int id = insert(c, "INSERT INTO faculty (name) VALUES (?)", f.name());
+            int id = insert(c, "INSERT INTO faculty (name, max_per_day) VALUES (?, ?)", f.name(), f.maxPerDay());
             writeUnavailability(c, id, f.unavailable());
             return f.withId(id);
         });
@@ -59,7 +61,7 @@ public final class JdbcFacultyDao extends JdbcSupport implements FacultyDao {
     @Override
     public void update(Faculty f) {
         transaction(c -> {
-            update(c, "UPDATE faculty SET name = ? WHERE id = ?", f.name(), f.id());
+            update(c, "UPDATE faculty SET name = ?, max_per_day = ? WHERE id = ?", f.name(), f.maxPerDay(), f.id());
             update(c, "DELETE FROM faculty_unavailability WHERE faculty_id = ?", f.id());
             writeUnavailability(c, f.id(), f.unavailable());
             return null;

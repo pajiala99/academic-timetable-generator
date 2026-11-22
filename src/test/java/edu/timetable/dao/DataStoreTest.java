@@ -16,6 +16,8 @@ import edu.timetable.solver.TimetableEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.sql.Connection;
+import java.sql.Statement;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -131,6 +133,54 @@ class DataStoreTest {
     }
 
     @Test
+    void labGroupsDailyLimitsAndSessionLengthsRoundTrip() {
+        Batch whole = store.batches().insert(new Batch(0, "CSE-1A", 60));
+        Batch g1 = store.batches().insert(new Batch(0, "CSE-1A G1", 30, whole.id()));
+        Faculty f = store.faculty().insert(new Faculty(0, "Dr. L", Set.of(new TimeSlot(0, 0)), 4));
+        Course lab = store.courses().insert(new Course(0, "CS101L", "Lab", f.id(), List.of(g1.id()), 1, 2, RoomType.LAB));
+
+        assertEquals(whole.id(), store.batches().findById(g1.id()).orElseThrow().parentId());
+        assertEquals(null, store.batches().findById(whole.id()).orElseThrow().parentId());
+        assertEquals(4, store.faculty().findById(f.id()).orElseThrow().maxPerDay());
+        assertEquals(2, store.courses().findById(lab.id()).orElseThrow().periodsPerMeeting());
+
+        store.faculty().update(new Faculty(f.id(), "Dr. L", Set.of(), 0));
+        assertEquals(0, store.faculty().findAll().get(0).maxPerDay());
+        store.batches().update(new Batch(g1.id(), "CSE-1A G1", 30, null));
+        assertEquals(null, store.batches().findById(g1.id()).orElseThrow().parentId());
+        store.batches().update(new Batch(g1.id(), "CSE-1A G1", 30, whole.id()));
+
+        // A batch with lab groups cannot be deleted from under them.
+        store.courses().delete(lab.id());
+        DataAccessException e = assertThrows(DataAccessException.class, () -> store.batches().delete(whole.id()));
+        assertTrue(e.isConstraintViolation());
+        store.clearAll();
+        assertTrue(store.batches().findAll().isEmpty());
+    }
+
+    /** A database created by the first release gains the new columns, keeping its data. */
+    @Test
+    void upgradesADatabaseFromTheFirstRelease() throws Exception {
+        Database old = Database.inMemory("old-" + UUID.randomUUID());
+        try (Connection c = old.connect(); Statement st = c.createStatement()) {
+            st.execute("CREATE TABLE faculty (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE)");
+            st.execute("CREATE TABLE batch (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(64) NOT NULL UNIQUE, "
+                    + "student_count INT NOT NULL)");
+            st.execute("CREATE TABLE course (id INT AUTO_INCREMENT PRIMARY KEY, code VARCHAR(32) NOT NULL, title VARCHAR(128) NOT NULL, "
+                    + "faculty_id INT NOT NULL, meetings_per_week INT NOT NULL, room_type VARCHAR(16) NOT NULL)");
+            st.execute("INSERT INTO faculty (name) VALUES ('Dr. Old')");
+            st.execute("INSERT INTO batch (name, student_count) VALUES ('OLD-1', 40)");
+        }
+        DataStore upgraded = new DataStore(old);
+        Faculty f = upgraded.faculty().findAll().get(0);
+        assertEquals("Dr. Old", f.name());
+        assertEquals(0, f.maxPerDay());
+        assertEquals(null, upgraded.batches().findAll().get(0).parentId());
+        upgraded.importDataset(SampleData.department());
+        assertEquals(SampleData.department().totalMeetings(), upgraded.loadDataset().totalMeetings());
+    }
+
+    @Test
     void uniqueCodesAreEnforced() {
         store.rooms().insert(new Room(0, "LH-1", "Main", 60, RoomType.LECTURE));
         DataAccessException e = assertThrows(DataAccessException.class,
@@ -165,7 +215,7 @@ class DataStoreTest {
 
         TimetableService.Evaluation ok = service.evaluate(store.loadDataset(), loaded, SoftConstraintEvaluator.Weights.defaults());
         assertTrue(ok.valid(), ok.hardViolations().toString());
-        assertEquals(136, ok.placedMeetings());
+        assertEquals(126, ok.placedMeetings());
 
         // Deleting a room cascades to the entries that used it: the saved run is now incomplete,
         // and re-evaluation says so instead of pretending it is still valid.
@@ -174,7 +224,7 @@ class DataStoreTest {
         TimetableRun stale = store.timetables().findById(saved.id()).orElseThrow();
         TimetableService.Evaluation bad = service.evaluate(store.loadDataset(), stale, SoftConstraintEvaluator.Weights.defaults());
         assertFalse(bad.valid());
-        assertTrue(bad.placedMeetings() < 136);
+        assertTrue(bad.placedMeetings() < 126);
 
         store.timetables().delete(saved.id());
         assertTrue(store.timetables().findAllSummaries().isEmpty());

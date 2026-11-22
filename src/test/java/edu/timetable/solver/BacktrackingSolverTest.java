@@ -1,12 +1,20 @@
 package edu.timetable.solver;
 
 import edu.timetable.model.Batch;
+import edu.timetable.model.Course;
 import edu.timetable.model.Dataset;
+import edu.timetable.model.Faculty;
+import edu.timetable.model.Room;
+import edu.timetable.model.RoomType;
+import edu.timetable.model.SchedulingConfig;
 import edu.timetable.service.SampleData;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -49,9 +57,12 @@ class BacktrackingSolverTest {
         for (long seed = 0; seed < 3_000; seed++) {
             Dataset data = TinyInstances.random(seed);
             Problem p = new Problem(data);
-            boolean truth = TinyInstances.bruteForceFeasible(p);
+            Schedule witness = TinyInstances.bruteForce(p);
+            boolean truth = witness != null;
             BacktrackingSolver.Result r = solve(p, seed);
             if (truth) {
+                // The enumerator's own timetable must also pass the independent validator.
+                assertEquals(List.of(), HardConstraintValidator.violations(p, witness), "seed " + seed);
                 feasible++;
                 assertEquals(BacktrackingSolver.Status.SOLVED, r.status(), "seed " + seed);
                 assertTrue(HardConstraintValidator.isFeasible(p, r.schedule()), "seed " + seed);
@@ -72,10 +83,10 @@ class BacktrackingSolverTest {
 
     @Test
     void reportsInfeasibleWhenAMeetingHasNowhereToGo() {
-        // CS101L needs a lab for 70 students but the largest lab seats 64.
+        // Lab group CSE-1A G1's labs need a lab for 70 students but the largest lab seats 64.
         Dataset base = SampleData.department();
         List<Batch> batches = base.batches().stream()
-                .map(b -> b.name().equals("CSE-1A") ? new Batch(b.id(), b.name(), 70) : b).toList();
+                .map(b -> b.name().equals("CSE-1A G1") ? new Batch(b.id(), b.name(), 70, b.parentId()) : b).toList();
         Problem p = new Problem(new Dataset(base.config(), base.rooms(), base.faculty(), batches, base.courses()));
         BacktrackingSolver.Result r = solve(p, 3);
         assertEquals(BacktrackingSolver.Status.INFEASIBLE, r.status());
@@ -94,6 +105,64 @@ class BacktrackingSolverTest {
         BacktrackingSolver.Result search = new BacktrackingSolver(p, new BacktrackingSolver.Options(1_000, 1_000, 1.3, 1), null).solve();
         assertEquals(BacktrackingSolver.Status.TIMEOUT, search.status());
         assertTrue(FeasibilityChecker.check(p, 1_000).provenInfeasible());
+    }
+
+    /** Two lab groups of one batch can take double-period labs at the same time, in different labs. */
+    @Test
+    void labGroupsRunInParallelButNotAgainstTheirBatch() {
+        SchedulingConfig day = new SchedulingConfig(1, 2);
+        List<Room> labs = List.of(new Room(1, "L1", "X", 30, RoomType.LAB), new Room(2, "L2", "X", 30, RoomType.LAB),
+                new Room(3, "H", "X", 60, RoomType.LECTURE));
+        List<Faculty> faculty = List.of(new Faculty(1, "F1"), new Faculty(2, "F2"), new Faculty(3, "F3"));
+        List<Batch> batches = List.of(new Batch(1, "B", 60), new Batch(2, "B-G1", 30, 1), new Batch(3, "B-G2", 30, 1));
+        List<Course> labsOnly = List.of(
+                new Course(1, "L-G1", "Lab", 1, List.of(2), 1, 2, RoomType.LAB),
+                new Course(2, "L-G2", "Lab", 2, List.of(3), 1, 2, RoomType.LAB));
+        Problem parallel = new Problem(new Dataset(day, labs, faculty, batches, labsOnly));
+        BacktrackingSolver.Result ok = solve(parallel, 1);
+        assertEquals(BacktrackingSolver.Status.SOLVED, ok.status());
+        assertEquals(0, ok.schedule().slotOf(0));
+        assertEquals(0, ok.schedule().slotOf(1));
+
+        // A whole-batch lecture in that same 2-period day leaves no room for either group's lab.
+        List<Course> withLecture = new ArrayList<>(labsOnly);
+        withLecture.add(new Course(3, "LEC", "Lecture", 3, List.of(1), 1, 1, RoomType.LECTURE));
+        Problem blocked = new Problem(new Dataset(day, labs, faculty, batches, withLecture));
+        assertEquals(BacktrackingSolver.Status.INFEASIBLE, solve(blocked, 1).status());
+    }
+
+    /** A double-period meeting keeps one room for both periods, even when rooms are tight. */
+    @Test
+    void doublePeriodsKeepTheirRoomAndStayWithinTheDay() {
+        Problem p = new Problem(SampleData.department());
+        Schedule s = solve(p, 5).schedule();
+        int periods = p.config().periodsPerDay();
+        int doubles = 0;
+        for (int m = 0; m < p.meetingCount(); m++) {
+            if (p.durationOf(m) < 2) continue;
+            doubles++;
+            assertTrue(s.slotOf(m) % periods + p.durationOf(m) <= periods, "crosses midnight: " + p.meeting(m).label());
+        }
+        assertEquals(18, doubles);
+        assertEquals(List.of(), HardConstraintValidator.violations(p, s));
+    }
+
+    /** With a limit of 2 a day, 6 single periods over a 3-day week must be spread exactly 2-2-2. */
+    @Test
+    void dailyLimitIsRespected() {
+        SchedulingConfig week = new SchedulingConfig(3, 4);
+        List<Batch> batches = new ArrayList<>();
+        List<Course> courses = new ArrayList<>();
+        for (int b = 1; b <= 6; b++) {
+            batches.add(new Batch(b, "B" + b, 30));
+            courses.add(new Course(b, "C" + b, "Course", 1, b, 1, RoomType.LECTURE));
+        }
+        Problem p = new Problem(new Dataset(week, List.of(new Room(1, "R", "X", 60, RoomType.LECTURE)),
+                List.of(new Faculty(1, "Busy", Set.of(), 2)), batches, courses));
+        Schedule s = solve(p, 2).schedule();
+        int[] perDay = new int[3];
+        for (int m = 0; m < p.meetingCount(); m++) perDay[s.slotOf(m) / 4]++;
+        assertArrayEquals(new int[]{2, 2, 2}, perDay);
     }
 
     @Test

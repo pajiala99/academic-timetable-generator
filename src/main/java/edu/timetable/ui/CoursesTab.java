@@ -6,6 +6,7 @@ import edu.timetable.model.Faculty;
 import edu.timetable.model.RoomType;
 import edu.timetable.service.TimetableService;
 import javafx.collections.FXCollections;
+import javafx.geometry.Pos;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
@@ -13,6 +14,7 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
 import java.util.ArrayList;
@@ -33,6 +35,7 @@ final class CoursesTab extends EntityTab<Course> {
         table.getColumns().add(column("Batches", this::batchNames, 140));
         table.getColumns().add(column("Faculty", c -> name(faculty.get(c.facultyId())), 190));
         table.getColumns().add(column("Meetings / week", Course::meetingsPerWeek, 130));
+        table.getColumns().add(column("Length", c -> c.periodsPerMeeting() == 1 ? "1 period" : c.periodsPerMeeting() + " periods", 90));
         table.getColumns().add(column("Room type", Course::roomType, 110));
     }
 
@@ -80,6 +83,11 @@ final class CoursesTab extends EntityTab<Course> {
         teacher.setMaxWidth(Double.MAX_VALUE);
         if (existing != null) teacher.setValue(faculty.get(existing.facultyId()));
         Spinner<Integer> meetings = new Spinner<>(1, 20, existing == null ? 3 : existing.meetingsPerWeek());
+        Spinner<Integer> length = new Spinner<>(1, 3, existing == null ? 1 : existing.periodsPerMeeting());
+        Label lengthHelp = new Label("consecutive periods per meeting (2 for a double-period lab)");
+        lengthHelp.getStyleClass().add("hint");
+        HBox lengthRow = new HBox(8, length, lengthHelp);
+        lengthRow.setAlignment(Pos.CENTER_LEFT);
         ComboBox<RoomType> type = new ComboBox<>(FXCollections.observableArrayList(RoomType.values()));
         type.setValue(existing == null ? RoomType.LECTURE : existing.roomType());
 
@@ -89,18 +97,23 @@ final class CoursesTab extends EntityTab<Course> {
         Forms.row(g, 2, "Batches", new VBox(6, batchPane, attendance));
         Forms.row(g, 3, "Faculty", teacher);
         Forms.row(g, 4, "Meetings per week", meetings);
-        Forms.row(g, 5, "Room type", type);
+        Forms.row(g, 5, "Length", lengthRow);
+        Forms.row(g, 6, "Room type", type);
         return Forms.show(owner(), existing == null ? "Add course" : "Edit course " + existing.code(), g,
                 () -> {
                     if (code.getText().isBlank()) return "Enter a course code.";
                     if (title.getText().isBlank()) return "Enter a title.";
                     if (selected(batchBoxes).isEmpty()) return "Tick the batch (or batches) that attend this course.";
+                    for (Batch b : selected(batchBoxes)) {
+                        if (b.isGroup() && selected(batchBoxes).stream().anyMatch(x -> x.id() == b.parentId()))
+                            return b.name() + " is a lab group of a batch you also ticked; tick one or the other.";
+                    }
                     if (teacher.getValue() == null) return "Choose who teaches this course.";
                     return null;
                 },
                 () -> new Course(existing == null ? 0 : existing.id(), code.getText().trim(), title.getText().trim(),
                         teacher.getValue().id(), selected(batchBoxes).stream().map(Batch::id).toList(),
-                        meetings.getValue(), type.getValue()));
+                        meetings.getValue(), length.getValue(), type.getValue()));
     }
 
     private static List<Batch> selected(List<CheckBox> boxes) {

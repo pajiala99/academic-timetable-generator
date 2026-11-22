@@ -18,7 +18,7 @@ class TimetableEngineTest {
         List<String> lines = new ArrayList<>();
         TimetableEngine.Result r = TimetableEngine.run(SampleData.department(), TimetableEngine.Options.defaults(), lines::add, null);
         assertEquals(TimetableEngine.Outcome.SUCCESS, r.outcome());
-        assertEquals(136, r.entries().size());
+        assertEquals(126, r.entries().size());
         assertTrue(r.breakdown().total() < r.anneal().initial().total());
         assertEquals(r.log(), lines);
 

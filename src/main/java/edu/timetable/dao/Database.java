@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
@@ -101,9 +102,37 @@ public final class Database {
             for (String sql : withoutComments.split(";")) {
                 if (!sql.isBlank()) st.execute(sql);
             }
+            upgrade(c, st);
         } catch (SQLException e) {
             throw new DataAccessException("Cannot initialise the database at " + url + ": " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Columns added after the first release: {table, column, statements that add it}. A database
+     * created by an older version is upgraded in place, keeping its data.
+     */
+    private static final String[][] UPGRADES = {
+            {"batch", "parent_id", "ALTER TABLE batch ADD COLUMN parent_id INT NULL",
+                    "ALTER TABLE batch ADD CONSTRAINT fk_batch_parent FOREIGN KEY (parent_id) REFERENCES batch (id)"},
+            {"faculty", "max_per_day", "ALTER TABLE faculty ADD COLUMN max_per_day INT NOT NULL DEFAULT 0"},
+            {"course", "periods_per_meeting", "ALTER TABLE course ADD COLUMN periods_per_meeting INT NOT NULL DEFAULT 1"},
+    };
+
+    private static void upgrade(Connection c, Statement st) throws SQLException {
+        for (String[] u : UPGRADES) {
+            if (hasColumn(c, u[0], u[1])) continue;
+            for (int i = 2; i < u.length; i++) st.execute(u[i]);
+        }
+    }
+
+    private static boolean hasColumn(Connection c, String table, String column) throws SQLException {
+        try (ResultSet rs = c.getMetaData().getColumns(c.getCatalog(), null, null, null)) {
+            while (rs.next()) {
+                if (table.equalsIgnoreCase(rs.getString("TABLE_NAME")) && column.equalsIgnoreCase(rs.getString("COLUMN_NAME"))) return true;
+            }
+        }
+        return false;
     }
 
     public boolean isEmbedded() {

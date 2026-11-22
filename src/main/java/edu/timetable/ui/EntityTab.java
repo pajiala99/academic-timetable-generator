@@ -46,7 +46,7 @@ abstract class EntityTab<T> extends Tab implements Refreshable {
         sorted.comparatorProperty().bind(table.comparatorProperty());
         table.setItems(sorted);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        table.setPlaceholder(new Label("No " + noun + "s yet. Click \"Add\" to create one."));
+        table.setPlaceholder(new Label("No " + plural(noun) + " yet. Click \"Add\" to create one."));
         table.setRowFactory(tv -> {
             TableRow<T> row = new TableRow<>();
             row.setOnMouseClicked(e -> {
@@ -70,7 +70,7 @@ abstract class EntityTab<T> extends Tab implements Refreshable {
         });
 
         TextField search = new TextField();
-        search.setPromptText("Search " + noun + "s");
+        search.setPromptText("Search " + plural(noun));
         search.textProperty().addListener((o, a, q) -> {
             String needle = q == null ? "" : q.trim().toLowerCase();
             filtered.setPredicate(item -> needle.isEmpty() || searchText(item).toLowerCase().contains(needle));
@@ -110,10 +110,14 @@ abstract class EntityTab<T> extends Tab implements Refreshable {
     public void refresh() {
         try {
             items.setAll(load());
-            count.setText(items.size() + " " + noun + (items.size() == 1 ? "" : "s"));
+            count.setText(items.size() + " " + (items.size() == 1 ? noun : plural(noun)));
         } catch (DataAccessException e) {
-            Dialogs.error(owner(), "Could not load " + noun + "s", e);
+            Dialogs.error(owner(), "Could not load " + plural(noun), e);
         }
+    }
+
+    private static String plural(String noun) {
+        return noun.endsWith("ch") || noun.endsWith("s") ? noun + "es" : noun + "s";
     }
 
     protected Window owner() {

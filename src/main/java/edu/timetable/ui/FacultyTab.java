@@ -8,9 +8,11 @@ import edu.timetable.service.TimetableService;
 import javafx.beans.binding.Bindings;
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
+import javafx.scene.control.Spinner;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
 import java.util.ArrayList;
@@ -23,27 +25,32 @@ import java.util.Set;
 import java.util.TreeSet;
 
 final class FacultyTab extends EntityTab<Faculty> {
-    private final Map<Integer, Integer> weeklyMeetings = new HashMap<>();
+    private final Map<Integer, Integer> weeklyPeriods = new HashMap<>();
     private SchedulingConfig config = new SchedulingConfig(5, 7);
 
     FacultyTab(TimetableService service) {
         super("Faculty", "faculty member", service);
         table.getColumns().add(column("Name", Faculty::name, 220));
-        table.getColumns().add(column("Weekly meetings", f -> weeklyMeetings.getOrDefault(f.id(), 0), 140));
+        table.getColumns().add(column("Weekly periods", f -> weeklyPeriods.getOrDefault(f.id(), 0), 130));
+        table.getColumns().add(column("Max per day", f -> f.hasDailyLimit() ? Integer.toString(f.maxPerDay()) : "no limit", 110));
         table.getColumns().add(column("Unavailable", this::summarise, 360));
     }
 
     @Override
     protected List<Faculty> load() {
         config = service.store().settings().loadConfig();
-        weeklyMeetings.clear();
-        for (Course c : service.store().courses().findAll()) weeklyMeetings.merge(c.facultyId(), c.meetingsPerWeek(), Integer::sum);
+        weeklyPeriods.clear();
+        for (Course c : service.store().courses().findAll()) weeklyPeriods.merge(c.facultyId(), c.weeklyPeriods(), Integer::sum);
         return service.store().faculty().findAll();
     }
 
     @Override
     protected Optional<Faculty> showEditor(Faculty existing) {
         TextField name = Forms.field(existing == null ? "" : existing.name());
+        Spinner<Integer> maxPerDay = new Spinner<>(0, 16, existing == null ? 0 : existing.maxPerDay());
+        maxPerDay.setPrefWidth(90);
+        Label limitHelp = new Label("periods a day at most (0 = no limit)");
+        limitHelp.getStyleClass().add("hint");
         Set<TimeSlot> initial = existing == null ? Set.of() : existing.unavailable();
 
         GridPane slots = new GridPane();
@@ -75,6 +82,9 @@ final class FacultyTab extends EntityTab<Faculty> {
 
         GridPane g = Forms.grid();
         Forms.row(g, 0, "Name", name);
+        HBox limitRow = new HBox(8, maxPerDay, limitHelp);
+        limitRow.setAlignment(Pos.CENTER_LEFT);
+        Forms.row(g, 1, "Daily limit", limitRow);
         VBox content = new VBox(12, g, help, slots);
         return Forms.show(owner(), existing == null ? "Add faculty member" : "Edit " + existing.name(), content,
                 () -> name.getText().isBlank() ? "Enter a name." : null,
@@ -83,7 +93,7 @@ final class FacultyTab extends EntityTab<Faculty> {
                     // Keep slots outside the current week shape, so shrinking the week never loses data.
                     for (TimeSlot t : initial) if (t.day() >= config.days() || t.period() >= config.periodsPerDay()) off.add(t);
                     for (ToggleButton b : toggles) if (b.isSelected()) off.add((TimeSlot) b.getUserData());
-                    return new Faculty(existing == null ? 0 : existing.id(), name.getText().trim(), off);
+                    return new Faculty(existing == null ? 0 : existing.id(), name.getText().trim(), off, maxPerDay.getValue());
                 });
     }
 

@@ -38,7 +38,7 @@ mock them:
 | **6** | **vertical slice** | **vertical slice** | **vertical slice** | **demo: enter data → MySQL → generate a clash-free timetable → view it → saved run reloads** |
 | 7 | embedded H2 fallback | soft objective (idle gaps, load spread) + simulated annealing | cost chart, cancel button | |
 | 8 | CSV export support queries | session spacing, building changes, weight tuning | weights in UI, CSV export | |
-| 9 | `course_batch` join table | combined classes in model, solver and annealer | multi-batch course editor, "joint with" cells | combined classes end to end |
+| 9 | `course_batch` join table, lab-group / daily-limit / session-length columns, in-place upgrade | combined classes, lab groups, double periods and daily limits in solver, checks and annealer | multi-batch course editor, lab-group and limit fields, Save as PDF | real-department constraints end to end |
 | 10 | MySQL integration test runs | brute-force property tests, benchmarks (`--synthetic`) | GUI smoke tests, usability fixes | feature freeze |
 | 11 | packaging (fat jar), install guide | performance tuning, DESIGN.md | user guide, screenshots | release candidate |
 | 12 | final report and presentation (all) | | | submission |
@@ -69,10 +69,16 @@ mock them:
 | batch idle gaps, faculty load spread, session spacing, building changes | `SoftConstraintEvaluator.idleGaps / loadSpread / sessionSpacing / buildingChanges` |
 | every move rejected unless it preserves hard feasibility | `SimulatedAnnealer.free / teachable` checked before `apply`; final audit by `HardConstraintValidator` |
 | honest handling of infeasibility | separate outcomes: INFEASIBLE_PRECHECK (with reasons), INFEASIBLE_SEARCH, TIMEOUT ("undecided"), CANCELLED |
+| *(added)* double-period labs | `Course.periodsPerMeeting`; allowed starts in `Problem`; pinned rooms in `BacktrackingSolver`; long-session check in `FeasibilityChecker` |
+| *(added)* lab groups | `Batch.parentId`; student groups in `Problem`; "Lab group of" in the batch editor |
+| *(added)* teachers' daily limits | `Faculty.maxPerDay`; forward checking in `BacktrackingSolver`; capacity check in `FeasibilityChecker`; annealer filter |
+| *(added)* printable timetables | "Save as PDF" (`service/PdfExporter`) and printing in `ui/TimetableTab` |
 
-Additions beyond the proposal: Hall's-condition checks with explanations, exact per-slot room
-matching inside the search, randomised restarts, combined classes, re-validation of saved
-timetables, CSV export, the embedded database fallback and the headless CLI.
+Additions beyond the proposal: double-period labs, lab groups, teachers' daily limits, combined
+classes, Hall's-condition and long-session checks with explanations, exact per-slot room
+matching inside the search, randomised restarts, re-validation of saved timetables, Save as
+PDF and CSV export, the embedded database fallback with in-place upgrades, and the headless
+CLI.
 
 ## Risks and mitigations
 

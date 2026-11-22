@@ -4,9 +4,10 @@ import java.util.Arrays;
 import java.util.BitSet;
 
 /**
- * Maximum-clique search on the conflict graph: branch and bound with a greedy-colouring upper
- * bound (Tomita and Seki's MCQ). A clique is a set of meetings that pairwise must use different
- * slots, so its size is a lower bound on the number of slots any clash-free timetable needs.
+ * Maximum-clique search on the conflict graph of meeting <i>pieces</i> (a meeting of length d
+ * has d pieces): branch and bound with a greedy-colouring upper bound (Tomita and Seki's MCQ).
+ * The pieces of a clique pairwise need distinct slots, so its size is a lower bound on the
+ * number of slots any timetable needs. For single-period meetings, pieces are just meetings.
  *
  * <p>The search is exponential in the worst case, so it runs under a time limit. If the limit
  * is hit the best clique found so far is still a valid lower bound, it just might not be the
@@ -14,6 +15,7 @@ import java.util.BitSet;
  */
 public final class CliqueFinder {
 
+    /** {@code members} are piece indices; see {@link Problem#pieceMeeting(int)}. */
     public record Result(int[] members, boolean optimal, long nodes, long millis) {
         public int size() {
             return members.length;
@@ -31,16 +33,16 @@ public final class CliqueFinder {
     private CliqueFinder(Problem p, long timeLimitMs) {
         this.p = p;
         this.deadline = System.currentTimeMillis() + Math.max(1, timeLimitMs);
-        this.current = new int[p.meetingCount()];
+        this.current = new int[p.pieceCount()];
         this.best = initialClique();
     }
 
     public static Result find(Problem p, long timeLimitMs) {
         long start = System.currentTimeMillis();
         CliqueFinder f = new CliqueFinder(p, timeLimitMs);
-        if (p.meetingCount() > 0) {
-            BitSet all = new BitSet(p.meetingCount());
-            all.set(0, p.meetingCount());
+        if (p.pieceCount() > 0) {
+            BitSet all = new BitSet(p.pieceCount());
+            all.set(0, p.pieceCount());
             f.expand(all);
         }
         int[] members = f.best.clone();
@@ -48,14 +50,24 @@ public final class CliqueFinder {
         return new Result(members, !f.timedOut, f.nodes, System.currentTimeMillis() - start);
     }
 
-    /** Every batch's and every faculty member's meetings form a clique; start from the biggest. */
+    /** All pieces of one student group's or one teacher's meetings form a clique; start from the biggest. */
     private int[] initialClique() {
-        int[] start = new int[0];
-        for (int b = 0; b < p.batches().length; b++)
-            if (p.meetingsOfBatch(b).length > start.length) start = p.meetingsOfBatch(b);
-        for (int f = 0; f < p.faculty().length; f++)
-            if (p.meetingsOfFaculty(f).length > start.length) start = p.meetingsOfFaculty(f);
-        return start.clone();
+        int[] best = new int[0];
+        for (int g = 0; g < p.groups().length; g++) best = larger(best, piecesOf(p.meetingsOfGroup(g)));
+        for (int f = 0; f < p.faculty().length; f++) best = larger(best, piecesOf(p.meetingsOfFaculty(f)));
+        return best;
+    }
+
+    private int[] piecesOf(int[] meetings) {
+        BitSet set = new BitSet(p.pieceCount());
+        BitSet wanted = new BitSet(p.meetingCount());
+        for (int m : meetings) wanted.set(m);
+        for (int piece = 0; piece < p.pieceCount(); piece++) if (wanted.get(p.pieceMeeting(piece))) set.set(piece);
+        return set.stream().toArray();
+    }
+
+    private static int[] larger(int[] a, int[] b) {
+        return b.length > a.length ? b : a;
     }
 
     private void expand(BitSet candidates) {
@@ -75,7 +87,7 @@ public final class CliqueFinder {
             int v = order[i];
             current[currentSize++] = v;
             BitSet next = (BitSet) candidates.clone();
-            next.and(p.neighbourSet(v));
+            next.and(p.pieceNeighbourSet(v));
             if (next.isEmpty()) {
                 if (currentSize > best.length) best = Arrays.copyOf(current, currentSize);
             } else {
@@ -96,7 +108,7 @@ public final class CliqueFinder {
             k++;
             BitSet available = (BitSet) uncoloured.clone();
             for (int v = available.nextSetBit(0); v >= 0; v = available.nextSetBit(v + 1)) {
-                available.andNot(p.neighbourSet(v));
+                available.andNot(p.pieceNeighbourSet(v));
                 uncoloured.clear(v);
                 order[idx] = v;
                 colour[idx] = k;

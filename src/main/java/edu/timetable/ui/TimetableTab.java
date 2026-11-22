@@ -6,6 +6,7 @@ import edu.timetable.model.Dataset;
 import edu.timetable.model.SchedulingConfig;
 import edu.timetable.model.TimetableRun;
 import edu.timetable.service.CsvExporter;
+import edu.timetable.service.PdfExporter;
 import edu.timetable.service.TimetableGrid;
 import edu.timetable.service.TimetableService;
 import edu.timetable.solver.SoftConstraintEvaluator;
@@ -14,9 +15,21 @@ import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
+import javafx.print.PageLayout;
+import javafx.print.PageOrientation;
+import javafx.print.Paper;
+import javafx.print.Printer;
+import javafx.print.PrinterJob;
+import javafx.scene.Group;
+import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Tab;
@@ -27,13 +40,20 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.RowConstraints;
+import javafx.scene.image.PixelReader;
+import javafx.scene.image.WritableImage;
 import javafx.scene.layout.VBox;
+import javafx.scene.transform.Scale;
 import javafx.stage.FileChooser;
 import javafx.stage.Window;
 
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /** Weekly grid of a saved timetable, from the point of view of a batch, faculty member or room. */
 final class TimetableTab extends Tab implements Refreshable {
@@ -80,12 +100,23 @@ final class TimetableTab extends Tab implements Refreshable {
         exportView.setOnAction(e -> exportView());
         Button exportAll = new Button("Export all (CSV)");
         exportAll.setOnAction(e -> exportAll());
+        MenuButton print = new MenuButton("PDF / Print");
+        MenuItem pdfView = new MenuItem("Save this timetable as PDF...");
+        pdfView.setOnAction(e -> savePdf(false));
+        MenuItem pdfEvery = new MenuItem("Save every timetable in this view as PDF (one page each)...");
+        pdfEvery.setOnAction(e -> savePdf(true));
+        MenuItem printView = new MenuItem("Print this timetable...");
+        printView.setOnAction(e -> print(false));
+        MenuItem printEvery = new MenuItem("Print every timetable in this view...");
+        printEvery.setOnAction(e -> print(true));
+        print.getItems().addAll(pdfView, pdfEvery, new SeparatorMenuItem(), printView, printEvery);
         delete.disableProperty().bind(runs.valueProperty().isNull());
         exportView.disableProperty().bind(runs.valueProperty().isNull());
         exportAll.disableProperty().bind(runs.valueProperty().isNull());
+        print.disableProperty().bind(runs.valueProperty().isNull());
 
         HBox toolbar = new HBox(8, new Label("Run"), runs, delete, new Separator(Orientation.VERTICAL),
-                new Label("View by"), perspective, subject, new Separator(Orientation.VERTICAL), exportView, exportAll);
+                new Label("View by"), perspective, subject, new Separator(Orientation.VERTICAL), exportView, exportAll, print);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.setPadding(new Insets(12, 12, 6, 12));
 
@@ -161,37 +192,41 @@ final class TimetableTab extends Tab implements Refreshable {
             grid.add(empty, 0, 0);
             return;
         }
-        TimetableGrid.Perspective view = perspective.getValue();
-        TimetableGrid tg = TimetableGrid.build(data, loaded.entries(), view, subject.getValue());
-        SchedulingConfig config = tg.config();
+        fill(grid, TimetableGrid.build(data, loaded.entries(), perspective.getValue(), subject.getValue()));
+    }
 
-        grid.getColumnConstraints().add(new ColumnConstraints(56));
-        grid.getRowConstraints().add(new RowConstraints());
+    /** Lays out a weekly grid: a header row of periods, then one row per day. */
+    private void fill(GridPane target, TimetableGrid tg) {
+        SchedulingConfig config = tg.config();
+        target.getColumnConstraints().add(new ColumnConstraints(56));
+        target.getRowConstraints().add(new RowConstraints());
         for (int p = 0; p < config.periodsPerDay(); p++) {
             // A fixed preferred width (rather than one computed from the content) keeps all periods equally wide.
             ColumnConstraints cc = new ColumnConstraints(120, 150, Double.MAX_VALUE);
             cc.setHgrow(Priority.ALWAYS);
             cc.setFillWidth(true);
-            grid.getColumnConstraints().add(cc);
+            target.getColumnConstraints().add(cc);
             Label head = new Label("P" + (p + 1));
             head.getStyleClass().add("tt-head");
             head.setMaxWidth(Double.MAX_VALUE);
             GridPane.setHalignment(head, HPos.CENTER);
-            grid.add(head, p + 1, 0);
+            target.add(head, p + 1, 0);
         }
         for (int d = 0; d < config.days(); d++) {
             RowConstraints rc = new RowConstraints();
             rc.setMinHeight(84);
             rc.setVgrow(Priority.ALWAYS);
-            grid.getRowConstraints().add(rc);
+            target.getRowConstraints().add(rc);
             Label day = new Label(SchedulingConfig.dayName(d));
             day.getStyleClass().add("tt-head");
-            grid.add(day, 0, d + 1);
-            for (int p = 0; p < config.periodsPerDay(); p++) grid.add(cell(tg.at(d, p), view), p + 1, d + 1);
+            target.add(day, 0, d + 1);
+            for (int p = 0; p < config.periodsPerDay(); p++) target.add(cell(tg, d, p), p + 1, d + 1);
         }
     }
 
-    private VBox cell(List<TimetableGrid.Cell> cells, TimetableGrid.Perspective view) {
+    private VBox cell(TimetableGrid tg, int day, int period) {
+        List<TimetableGrid.Cell> cells = tg.at(day, period);
+        TimetableGrid.Perspective view = tg.perspective();
         VBox box = new VBox(2);
         box.getStyleClass().add("tt-cell");
         box.setMaxWidth(Double.MAX_VALUE);
@@ -202,18 +237,22 @@ final class TimetableTab extends Tab implements Refreshable {
         }
         StringBuilder tip = new StringBuilder();
         for (TimetableGrid.Cell c : cells) {
-            Label code = new Label(c.course().code());
+            // In a batch's grid, name the lab group a session is for (e.g. "G1"), right after the code.
+            String group = view == TimetableGrid.Perspective.BATCH ? groupTag(c, tg.subject().id()) : "";
+            Label code = new Label(c.course().code() + group + (c.isMultiPeriod() ? "  " + c.periodRange() : ""));
             code.getStyleClass().add("tt-code");
             Label title = new Label(c.course().title());
             title.getStyleClass().add("tt-title");
             boolean sharedLine = view == TimetableGrid.Perspective.BATCH && c.course().isCombined();
-            Label details = new Label(sharedLine ? c.room().code() + " | " + c.faculty().name() : c.details(view));
+            Label details = new Label(sharedLine || !group.isEmpty() ? c.room().code() + " | " + c.faculty().name() : c.details(view));
             details.getStyleClass().add("tt-details");
             box.getChildren().addAll(code, title, details);
             if (sharedLine) {
-                int self = subject.getValue().id();
-                Label shared = new Label("Joint with " + String.join("+",
-                        c.batches().stream().filter(b -> b.id() != self).map(Batch::name).toList()));
+                // Name the other batches: not the subject itself, nor (for a lab group) its own batch.
+                Batch self = data.batchById().get(tg.subject().id());
+                Label shared = new Label("Joint with " + String.join("+", c.batches().stream()
+                        .filter(b -> self == null || (b.id() != self.id() && !Objects.equals(self.parentId(), b.id())))
+                        .map(Batch::name).toList()));
                 shared.getStyleClass().add("tt-shared");
                 shared.setWrapText(true);
                 box.getChildren().add(shared);
@@ -221,6 +260,7 @@ final class TimetableTab extends Tab implements Refreshable {
             if (!tip.isEmpty()) tip.append("\n\n");
             tip.append(c.course().code()).append(" - ").append(c.course().title())
                     .append("\nMeeting ").append(c.meetingIndex() + 1).append(" of ").append(c.course().meetingsPerWeek())
+                    .append(c.isMultiPeriod() ? ", periods " + c.periodRange().replace("P", "") : "")
                     .append(c.course().isCombined() ? "\nCombined class: " : "\nBatch: ").append(c.batchNames())
                     .append(" (").append(c.batches().stream().mapToInt(Batch::studentCount).sum()).append(" students)")
                     .append("\nFaculty: ").append(c.faculty().name())
@@ -229,9 +269,21 @@ final class TimetableTab extends Tab implements Refreshable {
         }
         String code = cells.get(0).course().code().replaceAll("L$", "");
         box.setStyle("-fx-background-color: " + PALETTE[Math.floorMod(code.hashCode(), PALETTE.length)] + ";");
-        if (cells.size() > 1) box.getStyleClass().add("tt-clash");
+        if (tg.clashAt(day, period)) box.getStyleClass().add("tt-clash");
         Tooltip.install(box, new Tooltip(tip.toString()));
         return box;
+    }
+
+    /** " · G1" when the session is for lab groups other than the grid's own subject, shortened by their batch's name. */
+    private String groupTag(TimetableGrid.Cell c, int subjectId) {
+        List<String> names = c.batches().stream()
+                .filter(b -> b.isGroup() && b.id() != subjectId)
+                .map(b -> {
+                    Batch parent = data.batchById().get(b.parentId());
+                    return parent != null && b.name().startsWith(parent.name()) ? b.name().substring(parent.name().length()).trim() : b.name();
+                })
+                .toList();
+        return names.isEmpty() ? "" : " \u00b7 " + String.join("+", names);
     }
 
     private void updateStatus() {
@@ -271,7 +323,8 @@ final class TimetableTab extends Tab implements Refreshable {
 
     private void exportView() {
         if (loaded == null || subject.getValue() == null) return;
-        File file = chooseFile(perspective.getValue() + "-" + subject.getValue().name().replaceAll("[^A-Za-z0-9-]+", "_") + ".csv");
+        File file = chooseFile(perspective.getValue() + "-" + subject.getValue().name().replaceAll("[^A-Za-z0-9-]+", "_") + ".csv",
+                "CSV files", "*.csv");
         if (file == null) return;
         try {
             CsvExporter.writeGrid(file.toPath(), TimetableGrid.build(data, loaded.entries(), perspective.getValue(), subject.getValue()));
@@ -282,7 +335,7 @@ final class TimetableTab extends Tab implements Refreshable {
 
     private void exportAll() {
         if (loaded == null) return;
-        File file = chooseFile("timetable-run-" + loaded.id() + ".csv");
+        File file = chooseFile("timetable-run-" + loaded.id() + ".csv", "CSV files", "*.csv");
         if (file == null) return;
         try {
             CsvExporter.writeEntries(file.toPath(), data, loaded.entries());
@@ -291,11 +344,95 @@ final class TimetableTab extends Tab implements Refreshable {
         }
     }
 
-    private File chooseFile(String name) {
+    /** Prints the current timetable, or every one in the current view, one A4 landscape page each. */
+    private void print(boolean every) {
+        if (loaded == null || subject.getValue() == null) return;
+        PrinterJob job = PrinterJob.createPrinterJob();
+        if (job == null) {
+            Dialogs.error(owner(), "Printing is not available", "No printer is set up on this computer. "
+                    + "Use \"Save as PDF\" instead: it does not need a printer.");
+            return;
+        }
+        if (!job.showPrintDialog(owner())) {
+            job.cancelJob();
+            return;
+        }
+        PageLayout layout = job.getPrinter().createPageLayout(Paper.A4, PageOrientation.LANDSCAPE, Printer.MarginType.DEFAULT);
+        List<TimetableGrid.Subject> pages = every ? List.copyOf(subject.getItems()) : List.of(subject.getValue());
+        for (TimetableGrid.Subject s : pages) {
+            if (!job.printPage(layout, printablePage(s, layout))) {
+                Dialogs.error(owner(), "Printing failed", "The printer reported an error: " + job.getJobStatus());
+                job.cancelJob();
+                return;
+            }
+        }
+        job.endJob();
+    }
+
+    /** Writes the current timetable, or every one in the current view, to a PDF. Needs no printer. */
+    private void savePdf(boolean every) {
+        if (loaded == null || subject.getValue() == null) return;
+        List<TimetableGrid.Subject> pages = every ? List.copyOf(subject.getItems()) : List.of(subject.getValue());
+        String name = every ? perspective.getValue() + "-timetables" : perspective.getValue() + "-" + subject.getValue().name();
+        File file = chooseFile(name.replaceAll("[^A-Za-z0-9-]+", "_") + ".pdf", "PDF files", "*.pdf");
+        if (file == null) return;
+        try {
+            List<BufferedImage> images = new ArrayList<>();
+            for (TimetableGrid.Subject s : pages) images.add(render(pageNode(s, 0, 0)));
+            PdfExporter.write(file.toPath(), images);
+        } catch (IOException | RuntimeException e) {
+            Dialogs.error(owner(), "Could not save the PDF", e);
+        }
+    }
+
+    /** Snapshots a page at twice its size, so the PDF stays sharp when zoomed or printed. */
+    private static BufferedImage render(Node page) {
+        SnapshotParameters params = new SnapshotParameters();
+        params.setTransform(new Scale(2, 2));
+        WritableImage image = page.snapshot(params, null);
+        int w = (int) image.getWidth(), h = (int) image.getHeight();
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        PixelReader pixels = image.getPixelReader();
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) out.setRGB(x, y, pixels.getArgb(x, y));
+        return out;
+    }
+
+    /** A white page with a heading and the weekly grid, scaled to fit the printable area. */
+    Node printablePage(TimetableGrid.Subject s, PageLayout layout) {
+        return pageNode(s, layout.getPrintableWidth(), layout.getPrintableHeight());
+    }
+
+    /** A page for one timetable, scaled down to fit {@code fitWidth} x {@code fitHeight} (0 = natural size). */
+    private Node pageNode(TimetableGrid.Subject s, double fitWidth, double fitHeight) {
+        TimetableGrid tg = TimetableGrid.build(data, loaded.entries(), perspective.getValue(), s);
+        GridPane g = new GridPane();
+        g.setHgap(4);
+        g.setVgap(4);
+        fill(g, tg);
+        Label heading = new Label(perspective.getValue() + ": " + s.name());
+        heading.getStyleClass().add("print-heading");
+        Label sub = new Label(loaded.label() + "  |  printed " + LocalDate.now());
+        sub.getStyleClass().add("hint");
+        VBox page = new VBox(8, heading, sub, g);
+        page.getStyleClass().add("print-page");
+        Scene scene = new Scene(new Group(page));
+        if (getTabPane() != null && getTabPane().getScene() != null) scene.getStylesheets().setAll(getTabPane().getScene().getStylesheets());
+        double width = 1150;
+        page.applyCss();
+        page.resize(width, page.prefHeight(width));
+        page.layout();
+        if (fitWidth > 0 && fitHeight > 0) {
+            double scale = Math.min(fitWidth / width, fitHeight / page.getHeight());
+            page.getTransforms().setAll(new Scale(scale, scale));
+        }
+        return page;
+    }
+
+    private File chooseFile(String name, String kind, String pattern) {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("Export CSV");
+        chooser.setTitle("Save as");
         chooser.setInitialFileName(name);
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV files", "*.csv"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(kind, pattern));
         return chooser.showSaveDialog(owner());
     }
 

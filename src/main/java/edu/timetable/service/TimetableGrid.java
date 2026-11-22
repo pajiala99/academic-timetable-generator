@@ -10,9 +10,12 @@ import edu.timetable.model.TimetableEntry;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -44,18 +47,42 @@ public final class TimetableGrid {
         }
     }
 
-    public record Cell(Course course, int meetingIndex, List<Batch> batches, Faculty faculty, Room room) {
+    /**
+     * One meeting as seen in one period. A double-period lab appears in both of its periods,
+     * with {@code part} 0 and 1.
+     *
+     * @param groups ids of the student groups attending (lab groups, or batches that are not split)
+     */
+    public record Cell(Course course, int meetingIndex, List<Batch> batches, Faculty faculty, Room room,
+                       int startPeriod, int part, Set<Integer> groups) {
         public String batchNames() {
             return batches.stream().map(Batch::name).collect(Collectors.joining("+"));
+        }
+
+        public boolean isMultiPeriod() {
+            return course.periodsPerMeeting() > 1;
+        }
+
+        /** "P3-P4" for a double period, "P3" otherwise. */
+        public String periodRange() {
+            int last = startPeriod + course.periodsPerMeeting();
+            return isMultiPeriod() ? "P" + (startPeriod + 1) + "-P" + last : "P" + (startPeriod + 1);
         }
 
         /** What the grid's own subject does not already say. */
         public String details(Perspective perspective) {
             return switch (perspective) {
-                case BATCH -> room.code() + " | " + faculty.name() + (course.isCombined() ? " | with " + batchNames() : "");
+                case BATCH -> room.code() + " | " + faculty.name() + (batches.size() > 1 || batches.get(0).isGroup() ? " | " + batchNames() : "");
                 case FACULTY -> batchNames() + " | " + room.code();
                 case ROOM -> batchNames() + " | " + faculty.name();
             };
+        }
+
+        /** Would these two meetings clash if they were in the same period? */
+        public boolean clashesWith(Cell other) {
+            if (room.id() == other.room.id() || faculty.id() == other.faculty.id()) return true;
+            for (int g : groups) if (other.groups.contains(g)) return true;
+            return false;
         }
     }
 
@@ -81,30 +108,61 @@ public final class TimetableGrid {
         return out.stream().sorted(Comparator.comparing(Subject::name)).toList();
     }
 
-    /** Entries that refer to courses or rooms that no longer exist, or fall outside the week, are skipped. */
+    /**
+     * Entries that refer to courses or rooms that no longer exist, or fall outside the week, are
+     * skipped. A batch's grid also shows the lab sessions of its lab groups; a lab group's grid
+     * also shows the whole-class meetings of its batch.
+     */
     public static TimetableGrid build(Dataset data, List<TimetableEntry> entries, Perspective perspective, Subject subject) {
         TimetableGrid grid = new TimetableGrid(data.config(), perspective, subject);
         Map<Integer, Course> courses = data.courseById();
         Map<Integer, Batch> batches = data.batchById();
         Map<Integer, Faculty> faculty = data.facultyById();
         Map<Integer, Room> rooms = data.roomById();
+        Map<Integer, Set<Integer>> groupsOfBatch = new HashMap<>();
+        for (Batch b : data.batches()) {
+            if (b.isGroup()) groupsOfBatch.computeIfAbsent(b.parentId(), k -> new HashSet<>()).add(b.id());
+        }
+        int periods = data.config().periodsPerDay();
         for (TimetableEntry e : entries) {
             Course c = courses.get(e.courseId());
             Room r = rooms.get(e.roomId());
             if (c == null || r == null) continue;
-            if (e.day() >= data.config().days() || e.period() >= data.config().periodsPerDay()) continue;
+            if (e.day() >= data.config().days() || e.period() >= periods) continue;
             List<Batch> attending = c.batchIds().stream().map(batches::get).filter(Objects::nonNull).toList();
             Faculty f = faculty.get(c.facultyId());
             if (attending.isEmpty() || f == null) continue;
             boolean shown = switch (perspective) {
-                case BATCH -> c.batchIds().contains(subject.id());
+                case BATCH -> attending.stream().anyMatch(b -> related(b, subject.id(), batches));
                 case FACULTY -> f.id() == subject.id();
                 case ROOM -> r.id() == subject.id();
             };
             if (!shown) continue;
-            grid.cells.get(e.day() * data.config().periodsPerDay() + e.period()).add(new Cell(c, e.meetingIndex(), attending, f, r));
+            Set<Integer> groups = new HashSet<>();
+            for (Batch b : attending) groups.addAll(groupsOfBatch.getOrDefault(b.id(), Set.of(b.id())));
+            for (int k = 0; k < c.periodsPerMeeting() && e.period() + k < periods; k++) {
+                grid.cells.get(e.day() * periods + e.period() + k)
+                        .add(new Cell(c, e.meetingIndex(), attending, f, r, e.period(), k, groups));
+            }
         }
         return grid;
+    }
+
+    /** Is a class of batch b attended by (some of) the students of batch subjectId? */
+    private static boolean related(Batch b, int subjectId, Map<Integer, Batch> batches) {
+        if (b.id() == subjectId) return true;
+        if (b.isGroup() && b.parentId() == subjectId) return true;      // a lab group's session, in its batch's grid
+        Batch subject = batches.get(subjectId);
+        return subject != null && subject.isGroup() && subject.parentId() == b.id(); // the batch's class, in a group's grid
+    }
+
+    /** Do two of the meetings shown in this period clash? (Two lab groups in different labs do not.) */
+    public boolean clashAt(int day, int period) {
+        List<Cell> here = at(day, period);
+        for (int i = 0; i < here.size(); i++)
+            for (int j = i + 1; j < here.size(); j++)
+                if (here.get(i).clashesWith(here.get(j))) return true;
+        return false;
     }
 
     public List<Cell> at(int day, int period) {

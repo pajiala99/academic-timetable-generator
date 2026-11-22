@@ -15,9 +15,11 @@ CREATE TABLE IF NOT EXISTS room (
     room_type VARCHAR(16) NOT NULL
 );
 
+-- max_per_day caps a teacher's periods on any one day; 0 means no limit.
 CREATE TABLE IF NOT EXISTS faculty (
-    id   INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL UNIQUE
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(100) NOT NULL UNIQUE,
+    max_per_day INT          NOT NULL DEFAULT 0 CHECK (max_per_day >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS faculty_unavailability (
@@ -28,19 +30,24 @@ CREATE TABLE IF NOT EXISTS faculty_unavailability (
     CONSTRAINT fk_unavail_faculty FOREIGN KEY (faculty_id) REFERENCES faculty (id) ON DELETE CASCADE
 );
 
+-- A batch with a parent_id is a lab group of that batch.
 CREATE TABLE IF NOT EXISTS batch (
     id            INT AUTO_INCREMENT PRIMARY KEY,
     name          VARCHAR(64) NOT NULL UNIQUE,
-    student_count INT         NOT NULL CHECK (student_count > 0)
+    student_count INT         NOT NULL CHECK (student_count > 0),
+    parent_id     INT         NULL,
+    CONSTRAINT fk_batch_parent FOREIGN KEY (parent_id) REFERENCES batch (id)
 );
 
+-- Each meeting lasts periods_per_meeting consecutive periods (2 for a double-period lab).
 CREATE TABLE IF NOT EXISTS course (
-    id                INT AUTO_INCREMENT PRIMARY KEY,
-    code              VARCHAR(32)  NOT NULL,
-    title             VARCHAR(128) NOT NULL,
-    faculty_id        INT          NOT NULL,
-    meetings_per_week INT          NOT NULL CHECK (meetings_per_week > 0),
-    room_type         VARCHAR(16)  NOT NULL,
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    code                VARCHAR(32)  NOT NULL,
+    title               VARCHAR(128) NOT NULL,
+    faculty_id          INT          NOT NULL,
+    meetings_per_week   INT          NOT NULL CHECK (meetings_per_week > 0),
+    periods_per_meeting INT          NOT NULL DEFAULT 1 CHECK (periods_per_meeting > 0),
+    room_type           VARCHAR(16)  NOT NULL,
     CONSTRAINT fk_course_faculty FOREIGN KEY (faculty_id) REFERENCES faculty (id)
 );
 

@@ -66,11 +66,12 @@ class SoftConstraintEvaluatorTest {
         for (int i = 0; i < 2_000; i++) {
             int a = rnd.nextInt(p.meetingCount());
             int b = rnd.nextBoolean() ? -1 : rnd.nextInt(p.meetingCount());
-            if (a == b) continue;
+            if (a == b || (b >= 0 && p.durationOf(a) != p.durationOf(b))) continue;
             double totalBefore = e.total(s), localBefore = e.localCost(s, a, b);
             int sa = s.slotOf(a), ra = s.roomOf(a);
             if (b < 0) {
-                s.assign(a, rnd.nextInt(p.slotCount()), rnd.nextInt(p.roomCount()));
+                int[] starts = p.allowedStarts(a);
+                s.assign(a, starts[rnd.nextInt(starts.length)], rnd.nextInt(p.roomCount()));
             } else {
                 s.assign(a, s.slotOf(b), s.roomOf(b));
                 s.assign(b, sa, ra);

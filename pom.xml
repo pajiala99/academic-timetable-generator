@@ -33,6 +33,12 @@
             <artifactId>h2</artifactId>
             <version>2.2.224</version>
         </dependency>
+        <!-- Writes "Save as PDF" files directly, without needing a printer -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

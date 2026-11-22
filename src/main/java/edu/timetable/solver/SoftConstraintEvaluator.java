@@ -5,16 +5,18 @@ import java.util.Arrays;
 /**
  * Weighted soft-constraint objective (lower is better). Every term is a sum of independent
  * per-entity contributions, so the change caused by moving one or two meetings can be
- * computed by re-scoring only the batches, faculty members and courses they belong to.
+ * computed by re-scoring only the student groups, faculty members and courses they belong to.
+ * Multi-period meetings count every period they occupy.
  *
  * <ul>
- *   <li><b>Batch idle gaps</b>: free periods between a batch's first and last class of a day.</li>
- *   <li><b>Faculty load spread</b>: how far each faculty member's daily teaching counts are from
- *       the most even split possible, measured as the sum of squared daily counts minus its
- *       minimum. 0 means perfectly even.</li>
+ *   <li><b>Batch idle gaps</b>: free periods between a student group's first and last class of
+ *       a day.</li>
+ *   <li><b>Faculty load spread</b>: how far each faculty member's daily teaching periods are
+ *       from the most even split possible, measured as the sum of squared daily counts minus
+ *       its minimum. 0 means perfectly even.</li>
  *   <li><b>Session spacing</b>: pairs of meetings of the same course on the same day (1 each)
  *       or on consecutive days (0.25 each).</li>
- *   <li><b>Building changes</b>: consecutive classes of a batch on the same day held in
+ *   <li><b>Building changes</b>: consecutive classes of a student group on the same day held in
  *       different buildings.</li>
  * </ul>
  */
@@ -59,9 +61,9 @@ public final class SoftConstraintEvaluator {
 
     public Breakdown breakdown(Schedule s) {
         double idle = 0, load = 0, spacing = 0, building = 0;
-        for (int b = 0; b < p.batches().length; b++) {
-            idle += idleGaps(s, b);
-            building += buildingChanges(s, b);
+        for (int g = 0; g < p.groups().length; g++) {
+            idle += idleGaps(s, g);
+            building += buildingChanges(s, g);
         }
         for (int f = 0; f < p.faculty().length; f++) load += loadSpread(s, f);
         for (int c = 0; c < p.courses().length; c++) spacing += sessionSpacing(s, c);
@@ -73,11 +75,11 @@ public final class SoftConstraintEvaluator {
     /** Weighted cost of every entity touched by meetings {@code a} and {@code b} ({@code b} may be -1). */
     double localCost(Schedule s, int a, int b) {
         double cost = 0;
-        int[] batchesA = p.batchesOf(a);
-        for (int x : batchesA) cost += batchCost(s, x);
+        int[] groupsA = p.groupsOf(a);
+        for (int x : groupsA) cost += groupCost(s, x);
         cost += facultyCost(s, p.facultyOf(a)) + courseCost(s, p.courseOf(a));
         if (b >= 0) {
-            for (int x : p.batchesOf(b)) if (!contains(batchesA, x)) cost += batchCost(s, x);
+            for (int x : p.groupsOf(b)) if (!contains(groupsA, x)) cost += groupCost(s, x);
             if (p.facultyOf(b) != p.facultyOf(a)) cost += facultyCost(s, p.facultyOf(b));
             if (p.courseOf(b) != p.courseOf(a)) cost += courseCost(s, p.courseOf(b));
         }
@@ -89,8 +91,8 @@ public final class SoftConstraintEvaluator {
         return false;
     }
 
-    private double batchCost(Schedule s, int b) {
-        return w.idleGap() * idleGaps(s, b) + w.buildingChange() * buildingChanges(s, b);
+    private double groupCost(Schedule s, int g) {
+        return w.idleGap() * idleGaps(s, g) + w.buildingChange() * buildingChanges(s, g);
     }
 
     private double facultyCost(Schedule s, int f) {
@@ -101,11 +103,12 @@ public final class SoftConstraintEvaluator {
         return w.sessionSpacing() * sessionSpacing(s, c);
     }
 
-    int idleGaps(Schedule s, int batch) {
+    int idleGaps(Schedule s, int group) {
         int[] dayMask = new int[days];
-        for (int m : p.meetingsOfBatch(batch)) {
+        for (int m : p.meetingsOfGroup(group)) {
             int slot = s.slotOf(m);
-            if (slot >= 0) dayMask[slot / periods] |= 1 << (slot % periods);
+            if (slot < 0) continue;
+            for (int t = slot; t < slot + p.durationOf(m); t++) dayMask[t / periods] |= 1 << (t % periods);
         }
         int gaps = 0;
         for (int mask : dayMask) {
@@ -117,12 +120,13 @@ public final class SoftConstraintEvaluator {
         return gaps;
     }
 
-    int buildingChanges(Schedule s, int batch) {
+    int buildingChanges(Schedule s, int group) {
         int[] buildingAt = new int[days * periods];
         Arrays.fill(buildingAt, -1);
-        for (int m : p.meetingsOfBatch(batch)) {
+        for (int m : p.meetingsOfGroup(group)) {
             int slot = s.slotOf(m);
-            if (slot >= 0) buildingAt[slot] = p.buildingOf(s.roomOf(m));
+            if (slot < 0) continue;
+            for (int t = slot; t < slot + p.durationOf(m); t++) buildingAt[t] = p.buildingOf(s.roomOf(m));
         }
         int changes = 0;
         for (int d = 0; d < days; d++) {
@@ -143,8 +147,8 @@ public final class SoftConstraintEvaluator {
         for (int m : p.meetingsOfFaculty(faculty)) {
             int slot = s.slotOf(m);
             if (slot < 0) continue;
-            perDay[slot / periods]++;
-            total++;
+            perDay[slot / periods] += p.durationOf(m);
+            total += p.durationOf(m);
         }
         int sumSquares = 0;
         for (int c : perDay) sumSquares += c * c;
