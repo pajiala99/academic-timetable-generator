@@ -255,7 +255,7 @@ public final class TimetableGrid {
             for (int p = 0; p < config.periodsPerDay(); p++) {
                 List<Cell> here = at(d, p);
                 if (here.isEmpty()) {
-                    line1[p] = "-";
+                    line1[p] = "Free";
                     line2[p] = "";
                 } else {
                     Cell c = here.get(0);

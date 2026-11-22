@@ -253,6 +253,10 @@ final class TimetableTab extends Tab implements Refreshable {
         box.setMaxHeight(Double.MAX_VALUE);
         if (cells.isEmpty()) {
             box.getStyleClass().add("tt-empty");
+            Label free = new Label("Free");
+            free.getStyleClass().add("tt-free");
+            box.setAlignment(Pos.CENTER);
+            box.getChildren().add(free);
             return box;
         }
         StringBuilder tip = new StringBuilder();
